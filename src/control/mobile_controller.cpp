@@ -223,11 +223,17 @@ MobileController::draw(DrawingContext& context)
 
     float btn_size = height * BUTTON_SCALE;
 
-    // === JUMP BUTTON (flush bottom-right corner) ===
-    float jump_size = btn_size * 1.3f;
-    float jump_pad = 4.f; // tiny padding from screen edge
+    // D-pad layout (bottom-left, always visible, compact)
+    float dpad_size = btn_size * 0.8f;
+    float pad = 4.f;
+    m_rect_directions.set_size(dpad_size, dpad_size);
+    m_rect_directions.set_pos(Vector(pad, height - dpad_size - pad));
+    m_draw_directions = m_rect_directions.grown(-m_rect_directions.get_height() / 8);
+
+    // === JUMP BUTTON (bottom-right, same Y axis as D-pad) ===
+    float jump_size = dpad_size; // same size as D-pad
     m_rect_jump.set_size(jump_size, jump_size);
-    m_rect_jump.set_pos(Vector(width - jump_size - jump_pad, height - jump_size - jump_pad));
+    m_rect_jump.set_pos(Vector(width - jump_size - pad, height - jump_size - pad));
     m_draw_jump = m_rect_jump.grown(-m_rect_jump.get_height() * 3 / 8);
 
     // === ESCAPE/PAUSE ===
@@ -242,17 +248,10 @@ MobileController::draw(DrawingContext& context)
     m_rect_debug.set_size(btn_size / 2, btn_size / 2);
     m_rect_debug.set_pos(Vector(width - btn_size / 2, 0));
     m_draw_debug = m_rect_debug.grown(-m_rect_debug.get_height() / 4);
-
-    // D-pad layout (bottom-left, always visible, compact)
-    float dpad_size = btn_size * 0.8f;
-    float dpad_pad = 4.f;
-    m_rect_directions.set_size(dpad_size, dpad_size);
-    m_rect_directions.set_pos(Vector(dpad_pad, height - dpad_size - dpad_pad));
-    m_draw_directions = m_rect_directions.grown(-m_rect_directions.get_height() / 8);
   }
 
   PaintStyle translucent;
-  translucent.set_alpha(0.5f);
+  translucent.set_alpha(0.7f);
 
   // Always draw D-pad (bottom-left) — works alongside tilt as a visible control
   context.color().draw_surface_scaled(m_tex_directions, m_draw_directions, LAYER_GUI + 99, translucent);
@@ -267,7 +266,7 @@ MobileController::draw(DrawingContext& context)
 
   // Draw JUMP button (short press = short hop, long press = full arc)
   PaintStyle jump_style;
-  jump_style.set_alpha(m_jump_held ? 0.8f : 0.5f);
+  jump_style.set_alpha(m_jump_held ? 0.9f : 0.7f);
   context.color().draw_surface_scaled(m_jump_held ? m_tex_btn_press : m_tex_btn, m_draw_jump, LAYER_GUI + 99, jump_style);
   context.color().draw_surface_scaled(m_tex_jump, m_draw_jump, LAYER_GUI + 99, jump_style);
 
