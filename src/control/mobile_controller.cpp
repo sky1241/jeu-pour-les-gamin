@@ -169,7 +169,7 @@ MobileController::update_accelerometer()
     //   screen_horizontal = -device_Y = -data[1]
     //   screen_vertical   =  device_X =  data[0]
     // (Same transform as SDLSurface.java onSensorChanged for ROTATION_90)
-    float screen_x = -data[1]; // horizontal tilt for landscape
+    float screen_x = data[1]; // horizontal tilt for landscape (inverted from initial guess)
     float screen_y = data[0];  // vertical tilt for landscape
 
     m_tilt_x = screen_x * m_tilt_sensitivity;
@@ -223,9 +223,11 @@ MobileController::draw(DrawingContext& context)
 
     float btn_size = height * BUTTON_SCALE;
 
-    // === JUMP BUTTON (bottom-right corner) ===
-    m_rect_jump.set_size(btn_size * 1.3f, btn_size * 1.3f);
-    m_rect_jump.set_pos(Vector(width - btn_size * 1.3f, height - btn_size * 1.3f));
+    // === JUMP BUTTON (flush bottom-right corner) ===
+    float jump_size = btn_size * 1.3f;
+    float jump_pad = 4.f; // tiny padding from screen edge
+    m_rect_jump.set_size(jump_size, jump_size);
+    m_rect_jump.set_pos(Vector(width - jump_size - jump_pad, height - jump_size - jump_pad));
     m_draw_jump = m_rect_jump.grown(-m_rect_jump.get_height() * 3 / 8);
 
     // === ESCAPE/PAUSE ===
@@ -241,10 +243,11 @@ MobileController::draw(DrawingContext& context)
     m_rect_debug.set_pos(Vector(width - btn_size / 2, 0));
     m_draw_debug = m_rect_debug.grown(-m_rect_debug.get_height() / 4);
 
-    // D-pad layout (bottom-left, always visible)
-    float dpad_size = btn_size * 2.0f;
+    // D-pad layout (bottom-left, always visible, compact)
+    float dpad_size = btn_size * 0.8f;
+    float dpad_pad = 4.f;
     m_rect_directions.set_size(dpad_size, dpad_size);
-    m_rect_directions.set_pos(Vector(0.f, height - dpad_size));
+    m_rect_directions.set_pos(Vector(dpad_pad, height - dpad_size - dpad_pad));
     m_draw_directions = m_rect_directions.grown(-m_rect_directions.get_height() / 8);
   }
 
