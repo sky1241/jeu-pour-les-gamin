@@ -53,6 +53,7 @@ public:
 private:
   void activate_widget_at_pos(float x, float y);
   void update_accelerometer();
+  bool use_tilt() const;
 
 private:
   std::bitset<(size_t)Control::CONTROLCOUNT> m_input, m_input_last;
@@ -65,20 +66,17 @@ private:
   float m_tilt_deadzone;     // Minimum threshold (default 1.5 m/s²)
   float m_tilt_sensitivity;  // Multiplier for responsiveness
 
-  // ========== DUAL JUMP BUTTONS ==========
-  Rectf m_rect_small_jump;   // Small jump touch zone
-  Rectf m_rect_big_jump;     // Big jump touch zone
-  Rectf m_draw_small_jump;   // Small jump draw zone
-  Rectf m_draw_big_jump;     // Big jump draw zone
+  // ========== D-PAD FALLBACK (when tilt unavailable) ==========
+  Rectf m_rect_directions;
+  Rectf m_draw_directions;
 
-  // Auto-release timer for small jump
-  bool m_small_jump_active;
-  Uint32 m_small_jump_start_time;
-  static const Uint32 SMALL_JUMP_DURATION_MS = 80; // 80ms = short hop
+  // ========== JUMP BUTTON ==========
+  Rectf m_rect_jump;
+  Rectf m_draw_jump;
 
-  // Track which finger is on big jump
-  SDL_FingerID m_big_jump_finger;
-  bool m_big_jump_held;
+  // Track which finger is on jump button
+  SDL_FingerID m_jump_finger;
+  bool m_jump_held;
 
   // ========== EXISTING BUTTONS (kept) ==========
   Rectf m_rect_action, m_rect_cheats,
@@ -88,8 +86,10 @@ private:
 
   // ========== TEXTURES ==========
   const SurfacePtr m_tex_btn, m_tex_btn_press, m_tex_pause,
-                   m_tex_jump, m_tex_action, m_tex_cheats, m_tex_debug,
-                   m_tex_small_jump, m_tex_big_jump;
+                   m_tex_jump, m_tex_action, m_tex_cheats, m_tex_debug;
+  const SurfacePtr m_tex_directions,
+                   m_tex_dir_hl_left, m_tex_dir_hl_right,
+                   m_tex_dir_hl_up, m_tex_dir_hl_down;
 
   int m_screen_width, m_screen_height;
   float m_mobile_controls_scale;

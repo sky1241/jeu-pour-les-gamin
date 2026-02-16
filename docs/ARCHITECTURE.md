@@ -124,19 +124,19 @@ Dead zone: |X| < 1.5 m/s² → rien
 Zone DOWN: Y > 8.0 m/s² → Control::DOWN (accroupi/butt jump)
 ```
 
-### 3B. Deux boutons de saut
+### 3B. Bouton de saut unique
 
-Au lieu d'UN bouton JUMP, on crée DEUX zones:
+UN seul bouton JUMP, la hauteur dépend de la durée d'appui:
 
-| Bouton | Comportement | Implémentation |
-|--------|-------------|----------------|
-| **PETIT SAUT** | Hop rapide | Press JUMP + auto-release après 80ms |
-| **GRAND SAUT** | Arc complet | Press JUMP + maintient tant que doigt appuyé |
+| Action | Comportement | Mécanisme |
+|--------|-------------|-----------|
+| **Appui court** | Petit saut (hop) | `early_jump_apex()` → gravité ×3 coupe l'arc |
+| **Appui long** | Grand saut (arc complet) | JUMP maintenu → arc complet naturel |
 
 **Comment ça marche côté code:**
-- Le `mobile_controller` gère un timer interne pour le petit saut
-- Quand le doigt touche "petit saut": on set JUMP=true, on démarre un timer de 80ms, puis JUMP=false
-- Quand le doigt touche "grand saut": JUMP=true tant que le doigt reste, JUMP=false au finger_up
+- Doigt touche le bouton → JUMP=true, on track le fingerId
+- Doigt maintenu → JUMP reste true chaque frame
+- Doigt relâché → JUMP=false → `player.cpp` détecte le release et coupe le saut
 - Le code de `player.cpp` n'a PAS besoin d'être modifié — il réagit déjà à la durée de hold(JUMP)
 
 ### 3C. Layout écran proposé
@@ -150,10 +150,10 @@ Au lieu d'UN bouton JUMP, on crée DEUX zones:
 │           (tilt = mouvement)                     │
 │                                                  │
 │                                                  │
-│                          ┌──────┐  ┌──────────┐ │
-│                          │ PETIT│  │   GRAND  │ │
-│                          │ SAUT │  │   SAUT   │ │
-│                          └──────┘  └──────────┘ │
+│                                    ┌──────────┐ │
+│                                    │          │ │
+│                                    │   SAUT   │ │
+│                                    └──────────┘ │
 │  [ACTION]                                        │
 └─────────────────────────────────────────────────┘
       ↕ tilt gauche/droite = déplacement
@@ -550,11 +550,17 @@ cd mk/android
 | Quoi | Status | Effort |
 |------|--------|--------|
 | Port Android | ✅ EXISTE DÉJÀ | Build only |
-| Touch controls | ✅ EXISTE DÉJÀ | À modifier |
-| Accéléromètre → mouvement | 🔧 À CODER | ~100 lignes C++ |
-| 2 boutons de saut | 🔧 À CODER | ~150 lignes C++ |
-| Assets boutons | 🎨 À CRÉER | 2 PNG |
-| Config tilt | 🔧 À AJOUTER | ~20 lignes |
-| **Total modifications** | | **~300 lignes C++** |
+| Touch controls | ✅ MODIFIÉ | Dual jump + tilt |
+| Accéléromètre → mouvement | ✅ CODÉ | ~100 lignes C++ |
+| 1 bouton de saut (durée = hauteur) | ✅ CODÉ | ~50 lignes C++ |
+| D-pad fallback (si pas d'accéléromètre) | ✅ CODÉ | ~60 lignes C++ |
+| Config tilt (load/save/sync) | ✅ CODÉ | ~20 lignes |
+| use_tilt() guard (tilt_enabled + sensor check) | ✅ CODÉ | ~5 lignes |
+| Asset bouton saut | ✅ EXISTE | jump.png (réutilisé) |
 
-Le gros du travail c'est pas le code, c'est le **tuning** — trouver la bonne dead zone, la bonne sensibilité du tilt, la bonne durée du petit saut (80ms? 100ms? 120ms?) pour que le gameplay soit fun.
+Le gros du travail maintenant c'est le **tuning** — trouver la bonne dead zone, la bonne sensibilité du tilt, la bonne durée du petit saut (80ms? 100ms? 120ms?) pour que le gameplay soit fun.
+
+### Bugs corrigés (session 2)
+- `g_config->tilt_enabled` est maintenant vérifié via `use_tilt()` avant d'utiliser l'accéléromètre
+- `tilt_deadzone` et `tilt_sensitivity` sont synchronisés depuis `g_config` à chaque frame dans `update()`
+- D-pad tactile avec highlights s'affiche automatiquement quand le tilt n'est pas disponible (pas de capteur ou tilt désactivé)

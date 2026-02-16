@@ -392,6 +392,7 @@ ScreenManager::process_events()
       }
 
       case SDL_FINGERMOTION:
+      {
         SDL_Event old_event = event;
 
         if (m_mobile_controller.process_finger_motion_event(event.tfinger))
@@ -404,6 +405,7 @@ ScreenManager::process_events()
         event.motion.yrel = Sint32(old_event.tfinger.dy * window_height);
         MouseCursor::current()->set_pos(event.motion.x, event.motion.y);
         break;
+      }
 
       case SDL_SENSORUPDATE:
         // Accelerometer data is polled in mobile_controller.update_accelerometer()

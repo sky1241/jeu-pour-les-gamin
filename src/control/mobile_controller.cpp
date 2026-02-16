@@ -42,15 +42,14 @@ MobileController::MobileController() :
   m_tilt_x(0.0f),
   m_tilt_deadzone(1.5f),    // 1.5 m/s² dead zone
   m_tilt_sensitivity(1.0f),
-  // Dual jump buttons (initial positions, recalculated in draw())
-  m_rect_small_jump(-160.f, -80.f, -96.f, -16.f),
-  m_rect_big_jump(-80.f, -80.f, -16.f, -16.f),
-  m_draw_small_jump(-160.f, -80.f, -96.f, -16.f),
-  m_draw_big_jump(-80.f, -80.f, -16.f, -16.f),
-  m_small_jump_active(false),
-  m_small_jump_start_time(0),
-  m_big_jump_finger(-1),
-  m_big_jump_held(false),
+  // D-pad fallback
+  m_rect_directions(0.f, 0.f, 128.f, 128.f),
+  m_draw_directions(0.f, 0.f, 128.f, 128.f),
+  // Jump button (initial position, recalculated in draw())
+  m_rect_jump(-80.f, -80.f, -16.f, -16.f),
+  m_draw_jump(-80.f, -80.f, -16.f, -16.f),
+  m_jump_finger(-1),
+  m_jump_held(false),
   // Existing buttons
   m_rect_action(-240.f, -80.f, -176.f, -16.f),
   m_rect_cheats(-160.f, 16.f, -96.f, 80.f),
@@ -69,9 +68,11 @@ MobileController::MobileController() :
   m_tex_action(Surface::from_file("/images/engine/mobile/action.png")),
   m_tex_cheats(Surface::from_file("/images/engine/mobile/cheats.png")),
   m_tex_debug(Surface::from_file("/images/engine/mobile/debug.png")),
-  // Reuse jump texture for both buttons (TODO: create custom assets)
-  m_tex_small_jump(Surface::from_file("/images/engine/mobile/jump.png")),
-  m_tex_big_jump(Surface::from_file("/images/engine/mobile/jump.png")),
+  m_tex_directions(Surface::from_file("/images/engine/mobile/direction.png")),
+  m_tex_dir_hl_left(Surface::from_file("/images/engine/mobile/direction_hightlight_left.png")),
+  m_tex_dir_hl_right(Surface::from_file("/images/engine/mobile/direction_hightlight_right.png")),
+  m_tex_dir_hl_up(Surface::from_file("/images/engine/mobile/direction_hightlight_up.png")),
+  m_tex_dir_hl_down(Surface::from_file("/images/engine/mobile/direction_hightlight_down.png")),
   m_screen_width(),
   m_screen_height(),
   m_mobile_controls_scale(),
@@ -128,6 +129,12 @@ MobileController::~MobileController()
     SDL_SensorClose(m_accelerometer);
     m_accelerometer = nullptr;
   }
+}
+
+bool
+MobileController::use_tilt() const
+{
+  return g_config->tilt_enabled && m_accelerometer != nullptr;
 }
 
 void
@@ -213,19 +220,14 @@ MobileController::draw(DrawingContext& context)
 
     float btn_size = height * BUTTON_SCALE;
 
-    // === SMALL JUMP BUTTON (left of right side) ===
-    m_rect_small_jump.set_size(btn_size, btn_size);
-    m_rect_small_jump.set_pos(Vector(width - 2.2f * btn_size, height - btn_size));
-    m_draw_small_jump = m_rect_small_jump.grown(-m_rect_small_jump.get_height() * 3 / 8);
+    // === JUMP BUTTON (bottom-right) ===
+    m_rect_jump.set_size(btn_size * 1.3f, btn_size * 1.3f);
+    m_rect_jump.set_pos(Vector(width - btn_size * 1.3f, height - btn_size * 1.3f));
+    m_draw_jump = m_rect_jump.grown(-m_rect_jump.get_height() * 3 / 8);
 
-    // === BIG JUMP BUTTON (rightmost, bigger) ===
-    m_rect_big_jump.set_size(btn_size * 1.3f, btn_size * 1.3f);
-    m_rect_big_jump.set_pos(Vector(width - btn_size * 1.3f, height - btn_size * 1.3f));
-    m_draw_big_jump = m_rect_big_jump.grown(-m_rect_big_jump.get_height() * 3 / 8);
-
-    // === ACTION BUTTON (left of jump buttons) ===
+    // === ACTION BUTTON (left of jump button) ===
     m_rect_action.set_size(btn_size, btn_size);
-    m_rect_action.set_pos(Vector(width - 3.4f * btn_size, height - btn_size));
+    m_rect_action.set_pos(Vector(width - 2.5f * btn_size, height - btn_size));
     m_draw_action = m_rect_action.grown(-m_rect_action.get_height() * 3 / 8);
 
     // === ESCAPE/PAUSE ===
@@ -240,29 +242,40 @@ MobileController::draw(DrawingContext& context)
     m_rect_debug.set_size(btn_size / 2, btn_size / 2);
     m_rect_debug.set_pos(Vector(width - btn_size / 2, 0));
     m_draw_debug = m_rect_debug.grown(-m_rect_debug.get_height() / 4);
+
+    // D-pad fallback layout (always calculated, drawn only when tilt is off)
+    float dpad_size = btn_size * 2.0f;
+    m_rect_directions.set_size(dpad_size, dpad_size);
+    m_rect_directions.set_pos(Vector(0.f, height - dpad_size));
+    m_draw_directions = m_rect_directions.grown(-m_rect_directions.get_height() / 8);
   }
 
   PaintStyle translucent;
   translucent.set_alpha(0.5f);
 
-  // No D-pad drawn — tilt replaces it!
-  // (If no accelerometer, we could fall back to drawing D-pad here)
+  // Draw D-pad when tilt controls are not available
+  if (!use_tilt())
+  {
+    context.color().draw_surface_scaled(m_tex_directions, m_draw_directions, LAYER_GUI + 99, translucent);
+    if (m_input[CONTROL_INT(LEFT)])
+      context.color().draw_surface_scaled(m_tex_dir_hl_left, m_draw_directions, LAYER_GUI + 99, translucent);
+    if (m_input[CONTROL_INT(RIGHT)])
+      context.color().draw_surface_scaled(m_tex_dir_hl_right, m_draw_directions, LAYER_GUI + 99, translucent);
+    if (m_input[CONTROL_INT(UP)])
+      context.color().draw_surface_scaled(m_tex_dir_hl_up, m_draw_directions, LAYER_GUI + 99, translucent);
+    if (m_input[CONTROL_INT(DOWN)])
+      context.color().draw_surface_scaled(m_tex_dir_hl_down, m_draw_directions, LAYER_GUI + 99, translucent);
+  }
 
   // Draw ACTION button
   context.color().draw_surface_scaled(m_input[CONTROL_INT(ACTION)] ? m_tex_btn_press : m_tex_btn, m_draw_action, LAYER_GUI + 99, translucent);
   context.color().draw_surface_scaled(m_tex_action, m_draw_action, LAYER_GUI + 99, translucent);
 
-  // Draw SMALL JUMP button (smaller, left)
-  PaintStyle small_jump_style;
-  small_jump_style.set_alpha(m_small_jump_active ? 0.8f : 0.5f);
-  context.color().draw_surface_scaled(m_small_jump_active ? m_tex_btn_press : m_tex_btn, m_draw_small_jump, LAYER_GUI + 99, small_jump_style);
-  context.color().draw_surface_scaled(m_tex_small_jump, m_draw_small_jump, LAYER_GUI + 99, small_jump_style);
-
-  // Draw BIG JUMP button (bigger, right)
-  PaintStyle big_jump_style;
-  big_jump_style.set_alpha(m_big_jump_held ? 0.8f : 0.5f);
-  context.color().draw_surface_scaled(m_big_jump_held ? m_tex_btn_press : m_tex_btn, m_draw_big_jump, LAYER_GUI + 99, big_jump_style);
-  context.color().draw_surface_scaled(m_tex_big_jump, m_draw_big_jump, LAYER_GUI + 99, big_jump_style);
+  // Draw JUMP button (short press = short hop, long press = full arc)
+  PaintStyle jump_style;
+  jump_style.set_alpha(m_jump_held ? 0.8f : 0.5f);
+  context.color().draw_surface_scaled(m_jump_held ? m_tex_btn_press : m_tex_btn, m_draw_jump, LAYER_GUI + 99, jump_style);
+  context.color().draw_surface_scaled(m_tex_jump, m_draw_jump, LAYER_GUI + 99, jump_style);
 
   // Draw PAUSE button
   context.color().draw_surface_scaled(m_input[CONTROL_INT(ESCAPE)] ? m_tex_btn_press : m_tex_btn, m_draw_escape, LAYER_GUI + 99, translucent);
@@ -289,8 +302,13 @@ MobileController::update()
   m_input_last = m_input;
   m_input.reset();
 
-  // 1. Read accelerometer for LEFT/RIGHT/DOWN/UP
-  update_accelerometer();
+  // Sync tilt config from game settings
+  m_tilt_deadzone = g_config->tilt_deadzone;
+  m_tilt_sensitivity = g_config->tilt_sensitivity;
+
+  // 1. Read accelerometer for LEFT/RIGHT/DOWN/UP (if tilt enabled and available)
+  if (use_tilt())
+    update_accelerometer();
 
   // 2. Allow using on-screen controls with the mouse (for desktop testing)
   int x, y;
@@ -306,29 +324,13 @@ MobileController::update()
     activate_widget_at_pos(i.second.x, i.second.y);
   }
 
-  // 4. Handle small jump auto-release timer
-  if (m_small_jump_active)
-  {
-    Uint32 now = SDL_GetTicks();
-    if (now - m_small_jump_start_time < SMALL_JUMP_DURATION_MS)
-    {
-      // Keep JUMP pressed during the short duration
-      m_input.set(CONTROL_INT(JUMP), true);
-    }
-    else
-    {
-      // Time elapsed → auto-release for short hop
-      m_small_jump_active = false;
-    }
-  }
-
-  // 5. Big jump = JUMP held as long as finger stays pressed
-  if (m_big_jump_held)
+  // 4. Jump = held as long as finger stays on button
+  if (m_jump_held)
   {
     m_input.set(CONTROL_INT(JUMP), true);
   }
 
-  // 6. Haptic feedback on new button press
+  // 5. Haptic feedback on new button press
   for (size_t i = 0; i < static_cast<size_t>(Control::CONTROLCOUNT); ++i)
   {
     if (m_input[i] != m_input_last[i] && m_input[i] == true)
@@ -369,20 +371,11 @@ MobileController::process_finger_down_event(const SDL_TouchFingerEvent& event)
   Vector pos(event.x * float(m_screen_width), event.y * float(m_screen_height));
   m_fingers[event.fingerId] = pos;
 
-  // SMALL JUMP: trigger timed press (auto-releases after SMALL_JUMP_DURATION_MS)
-  if (m_rect_small_jump.contains(pos))
+  // JUMP: held as long as finger stays on button (short press = short hop, long = full arc)
+  if (m_rect_jump.contains(pos))
   {
-    m_small_jump_active = true;
-    m_small_jump_start_time = SDL_GetTicks();
-    buzz();
-    return true;
-  }
-
-  // BIG JUMP: held as long as finger stays on button
-  if (m_rect_big_jump.contains(pos))
-  {
-    m_big_jump_held = true;
-    m_big_jump_finger = event.fingerId;
+    m_jump_held = true;
+    m_jump_finger = event.fingerId;
     buzz();
     return true;
   }
@@ -390,6 +383,7 @@ MobileController::process_finger_down_event(const SDL_TouchFingerEvent& event)
   return m_rect_action.contains(pos) ||
     m_rect_escape.contains(pos) ||
     m_rect_item.contains(pos) ||
+    (!use_tilt() && m_rect_directions.contains(pos)) ||
     (g_config->developer_mode && m_rect_cheats.contains(pos)) ||
     (g_config->developer_mode && m_rect_debug.contains(pos));
 }
@@ -401,19 +395,19 @@ MobileController::process_finger_up_event(const SDL_TouchFingerEvent& event)
   Vector pos(event.x * float(m_screen_width), event.y * float(m_screen_height));
   m_fingers.erase(event.fingerId);
 
-  // If this is the big jump finger releasing → stop the jump
-  if (m_big_jump_held && event.fingerId == m_big_jump_finger)
+  // If this is the jump finger releasing → stop the jump
+  if (m_jump_held && event.fingerId == m_jump_finger)
   {
-    m_big_jump_held = false;
-    m_big_jump_finger = -1;
+    m_jump_held = false;
+    m_jump_finger = -1;
     return true;
   }
 
-  return m_rect_small_jump.contains(pos) ||
-    m_rect_big_jump.contains(pos) ||
+  return m_rect_jump.contains(pos) ||
     m_rect_action.contains(pos) ||
     m_rect_escape.contains(pos) ||
     m_rect_item.contains(pos) ||
+    (!use_tilt() && m_rect_directions.contains(pos)) ||
     (g_config->developer_mode && m_rect_cheats.contains(pos)) ||
     (g_config->developer_mode && m_rect_debug.contains(pos));
 }
@@ -425,22 +419,22 @@ MobileController::process_finger_motion_event(const SDL_TouchFingerEvent& event)
   Vector pos(event.x * float(m_screen_width), event.y * float(m_screen_height));
   m_fingers[event.fingerId] = pos;
 
-  // If big jump finger slides off the button → release
-  if (m_big_jump_held && event.fingerId == m_big_jump_finger)
+  // If jump finger slides off the button → release
+  if (m_jump_held && event.fingerId == m_jump_finger)
   {
-    if (!m_rect_big_jump.contains(pos))
+    if (!m_rect_jump.contains(pos))
     {
-      m_big_jump_held = false;
-      m_big_jump_finger = -1;
+      m_jump_held = false;
+      m_jump_finger = -1;
     }
     return true;
   }
 
-  return m_rect_small_jump.contains(pos) ||
-    m_rect_big_jump.contains(pos) ||
+  return m_rect_jump.contains(pos) ||
     m_rect_action.contains(pos) ||
     m_rect_escape.contains(pos) ||
     m_rect_item.contains(pos) ||
+    (!use_tilt() && m_rect_directions.contains(pos)) ||
     (g_config->developer_mode && m_rect_cheats.contains(pos)) ||
     (g_config->developer_mode && m_rect_debug.contains(pos));
 }
@@ -475,6 +469,22 @@ MobileController::activate_widget_at_pos(float x, float y)
       m_input.set(CONTROL_INT(DEBUG_MENU), true);
   }
 
-  // NOTE: No D-pad activation here — movement comes from accelerometer
+  // D-pad fallback: detect direction zones when tilt is not active
+  if (!use_tilt() && m_rect_directions.contains(pos))
+  {
+    float cx = (m_rect_directions.get_left() + m_rect_directions.get_right()) / 2.0f;
+    float cy = (m_rect_directions.get_top() + m_rect_directions.get_bottom()) / 2.0f;
+    float half_w = m_rect_directions.get_width() / 2.0f;
+    float half_h = m_rect_directions.get_height() / 2.0f;
+    float dx = (pos.x - cx) / half_w;
+    float dy = (pos.y - cy) / half_h;
+
+    const float threshold = 0.3f;
+    if (dx < -threshold) m_input.set(CONTROL_INT(LEFT), true);
+    if (dx > threshold) m_input.set(CONTROL_INT(RIGHT), true);
+    if (dy < -threshold) m_input.set(CONTROL_INT(UP), true);
+    if (dy > threshold) m_input.set(CONTROL_INT(DOWN), true);
+  }
+
   // NOTE: Jump buttons are handled in process_finger_down/up for precise timing
 }

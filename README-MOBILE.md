@@ -3,7 +3,7 @@
 
 Fork de [SuperTux](https://github.com/SuperTux/supertux) (GPL v3+) avec des contrôles mobiles custom:
 - **Accéléromètre** → pencher le téléphone pour bouger Tux (remplace le D-pad)
-- **2 boutons de saut** → petit saut (hop rapide) + grand saut (arc complet)
+- **1 bouton de saut** → appui court = petit saut, appui long = grand saut
 
 ---
 
@@ -14,8 +14,8 @@ Fork de [SuperTux](https://github.com/SuperTux/supertux) (GPL v3+) avec des cont
 | Pencher droite | Tux avance à droite |
 | Pencher gauche | Tux avance à gauche |
 | Pencher fort en avant | Tux s'accroupit (butt jump) |
-| Bouton petit saut | Hop rapide (~80ms press) |
-| Bouton grand saut (maintenir) | Saut plein arc |
+| Bouton saut (appui court) | Petit saut (hop rapide) |
+| Bouton saut (maintenir) | Grand saut (arc complet) |
 | Bouton action | Utiliser power-up |
 | Bouton pause | Menu pause |
 

@@ -169,6 +169,11 @@ add_package(TARGET PNG
   PKG PNG PKG_USE PNG::PNG PKG_CONFIG libpng REQUIRED)
 add_package(TARGET ZLIB
   PKG ZLIB PKG_USE ZLIB::ZLIB PKG_CONFIG zlib REQUIRED)
+# vcpkg static builds create PhysFS::PhysFS-static; alias it so add_package finds it
+find_package(PhysFS CONFIG QUIET)
+if(TARGET PhysFS::PhysFS-static AND NOT TARGET PhysFS)
+  add_library(PhysFS ALIAS PhysFS::PhysFS-static)
+endif()
 add_package(TARGET PhysFS
   PKG PhysFS PKG_USE PhysFS::PhysFS CONFIG REQUIRED PKG_CONFIG physfs PhysicsFS
   PREFER_PKGCONFIG)
@@ -188,10 +193,20 @@ if(NOT EMSCRIPTEN)
   add_package(TARGET SDL2
     PKG SDL2 PKG_USE SDL2::SDL2 CONFIG REQUIRED PKG_CONFIG sdl2 SDL2
     ${SUPERTUX_ANDROID_PREFER_PKGCONF})
+  # vcpkg static builds create SDL2_image::SDL2_image-static; alias it
+  find_package(SDL2_image CONFIG QUIET)
+  if(TARGET SDL2_image::SDL2_image-static AND NOT TARGET SDL2_image)
+    add_library(SDL2_image ALIAS SDL2_image::SDL2_image-static)
+  endif()
   add_package(TARGET SDL2_image
     PKG SDL2_image PKG_USE SDL2_image::SDL2_image CONFIG REQUIRED PKG_CONFIG SDL2_image sdl2_image
     ${SUPERTUX_ANDROID_PREFER_PKGCONF})
   if (USE_SYSTEM_SDL2_TTF)
+    # vcpkg static builds create SDL2_ttf::SDL2_ttf-static; alias it
+    find_package(SDL2_ttf CONFIG QUIET)
+    if(TARGET SDL2_ttf::SDL2_ttf-static AND NOT TARGET SDL2_ttf)
+      add_library(SDL2_ttf ALIAS SDL2_ttf::SDL2_ttf-static)
+    endif()
     add_package(TARGET SDL2_ttf
       PKG SDL2_ttf PKG_USE SDL2_ttf::SDL2_ttf CONFIG REQUIRED PKG_CONFIG SDL2_ttf sdl2_ttf)
   endif()

@@ -25,3 +25,6 @@ mk/android/local.properties
 
 # vcpkg
 vcpkg_installed/
+mk/android/assetpack/src/main/assets/data.zip
+mk/android/app/.cxx/
+mk/android/app/build/
