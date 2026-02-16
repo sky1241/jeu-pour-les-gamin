@@ -230,8 +230,8 @@ MobileController::draw(DrawingContext& context)
     m_rect_directions.set_pos(Vector(pad, height - dpad_size - pad));
     m_draw_directions = m_rect_directions.grown(-m_rect_directions.get_height() / 8);
 
-    // === JUMP BUTTON (bottom-right, same Y axis as D-pad) ===
-    float jump_size = dpad_size; // same size as D-pad
+    // === JUMP BUTTON (bottom-right, same Y axis as D-pad, 2x size) ===
+    float jump_size = dpad_size * 2.0f;
     m_rect_jump.set_size(jump_size, jump_size);
     m_rect_jump.set_pos(Vector(width - jump_size - pad, height - jump_size - pad));
     m_draw_jump = m_rect_jump.grown(-m_rect_jump.get_height() * 3 / 8);

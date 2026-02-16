@@ -1,12 +1,47 @@
-# SuperTux
+# SuperTux Mobile (fork pour les gamins)
 
-[![Windows](https://github.com/SuperTux/supertux/actions/workflows/windows.yml/badge.svg?branch=master)](https://github.com/SuperTux/supertux/actions/workflows/windows.yml?branch=master)
-[![MacOS](https://github.com/SuperTux/supertux/actions/workflows/macos.yml/badge.svg?branch=master)](https://github.com/SuperTux/supertux/actions/workflows/macos.yml?branch=master)
-[![GNU/Linux](https://github.com/SuperTux/supertux/actions/workflows/gnulinux.yml/badge.svg?branch=master)](https://github.com/SuperTux/supertux/actions/workflows/gnulinux.yml?branch=master)
-[![Android](https://github.com/SuperTux/supertux/actions/workflows/android.yml/badge.svg?branch=master)](https://github.com/SuperTux/supertux/actions/workflows/android.yml?branch=master)
-[![FreeBSD](https://github.com/SuperTux/supertux/actions/workflows/freebsd.yml/badge.svg?branch=master)](https://github.com/SuperTux/supertux/actions/workflows/freebsd.yml?branch=master)
-[![WebAssembly](https://github.com/SuperTux/supertux/actions/workflows/wasm.yml/badge.svg?branch=master)](https://github.com/SuperTux/supertux/actions/workflows/wasm.yml?branch=master)
-[![Github All Releases](https://img.shields.io/github/downloads/supertux/supertux/total.svg?maxAge=2592000)](https://github.com/SuperTux/supertux)
+Fork de [SuperTux](https://github.com/SuperTux/supertux) adapte pour Android avec des controles tactiles pour les enfants.
+
+## Ce qui a change par rapport a SuperTux original
+
+- **Croix directionnelle (D-pad)** en bas a gauche de l'ecran, toujours visible
+- **Bouton de saut** en bas a droite, gros et facile a toucher (appui court = petit saut, appui long = grand saut)
+- **Controles par inclinaison (tilt)** : pencher le telephone a gauche/droite pour deplacer Tux
+- **Bouton pause** en haut a gauche
+- **Ecran d'intro de niveau supprime** sur Android (on rentre direct dans le jeu)
+- **Bouton action supprime** (inutile pour les enfants)
+- Build Android avec **SDL 2.32.10**, **vcpkg arm64**, **NDK 29**
+
+## Comment builder l'APK
+
+Voir [PROMPT-POUR-CLAUDE-CODE.md](PROMPT-POUR-CLAUDE-CODE.md) pour les instructions de build detaillees.
+
+En resume :
+1. Installer Android SDK, NDK 29, vcpkg
+2. Configurer `mk/android/local.properties` avec les chemins SDK/NDK/vcpkg
+3. `cd mk/android && ./gradlew assembleDebug -Pci -Pcpuarch=arm64-v8a`
+4. `adb install app/build/outputs/apk/debug/app-debug.apk`
+
+## Fichiers modifies (par rapport a SuperTux upstream)
+
+| Fichier | Description |
+|---------|-------------|
+| `src/control/mobile_controller.cpp` | D-pad, saut, tilt, layout boutons |
+| `src/control/mobile_controller.hpp` | Declaration du controleur mobile |
+| `src/supertux/game_session.cpp` | Skip intro sur Android |
+| `src/supertux/screen_manager.cpp` | Fix switch case SDL_FINGERMOTION |
+| `src/supertux/gameconfig.hpp/cpp` | Config tilt (deadzone, sensitivity) |
+| `mk/cmake/SuperTux/Android.cmake` | vcpkg CACHE FORCE pour NDK |
+| `CMakeLists.txt` | Alias targets vcpkg static |
+| `mk/android/app/build.gradle` | NDK 29, cmake args |
+
+## Licence
+
+GPL v3 (herite de SuperTux) — voir [LICENSE.txt](LICENSE.txt)
+
+---
+
+## SuperTux original
 
 SuperTux is a jump'n'run game with strong inspiration from the
 Super Mario Bros. games for the various Nintendo platforms.
