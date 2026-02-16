@@ -1,0 +1,27 @@
+# Build
+build/
+cmake-build*/
+*.o
+*.a
+*.so
+*.dylib
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Android build artifacts
+mk/android/.gradle/
+mk/android/app/build/
+mk/android/assetpack/build/
+mk/android/local.properties
+*.apk
+
+# vcpkg
+vcpkg_installed/
