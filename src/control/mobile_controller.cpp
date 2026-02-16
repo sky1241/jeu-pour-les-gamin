@@ -164,11 +164,15 @@ MobileController::update_accelerometer()
   float data[3]; // X, Y, Z in m/s²
   if (SDL_SensorGetData(m_accelerometer, data, 3) == 0)
   {
-    // SDL accelerometer: X = lateral tilt, Y = forward/back, Z = gravity
-    // When phone is landscape (game orientation):
-    //   Tilt right → positive X → move RIGHT
-    //   Tilt left  → negative X → move LEFT
-    m_tilt_x = data[0] * m_tilt_sensitivity;
+    // SDL_SensorGetData returns RAW device-frame accelerometer data.
+    // For landscape mode (ROTATION_90), we must remap axes:
+    //   screen_horizontal = -device_Y = -data[1]
+    //   screen_vertical   =  device_X =  data[0]
+    // (Same transform as SDLSurface.java onSensorChanged for ROTATION_90)
+    float screen_x = -data[1]; // horizontal tilt for landscape
+    float screen_y = data[0];  // vertical tilt for landscape
+
+    m_tilt_x = screen_x * m_tilt_sensitivity;
 
     // Apply dead zone for horizontal movement
     if (m_tilt_x > m_tilt_deadzone)
@@ -181,14 +185,13 @@ MobileController::update_accelerometer()
     }
 
     // DOWN when phone tilted sharply forward (for ducking / butt jump)
-    // Normal gravity ~9.8 on Y when flat; >8.0 means tilted forward
-    if (data[1] > 8.0f)
+    if (screen_y > 8.0f)
     {
       m_input.set(CONTROL_INT(DOWN), true);
     }
 
     // UP when phone tilted sharply backward (for looking up / entering doors)
-    if (data[1] < -2.0f)
+    if (screen_y < -2.0f)
     {
       m_input.set(CONTROL_INT(UP), true);
     }
@@ -220,15 +223,10 @@ MobileController::draw(DrawingContext& context)
 
     float btn_size = height * BUTTON_SCALE;
 
-    // === JUMP BUTTON (bottom-right) ===
+    // === JUMP BUTTON (bottom-right corner) ===
     m_rect_jump.set_size(btn_size * 1.3f, btn_size * 1.3f);
     m_rect_jump.set_pos(Vector(width - btn_size * 1.3f, height - btn_size * 1.3f));
     m_draw_jump = m_rect_jump.grown(-m_rect_jump.get_height() * 3 / 8);
-
-    // === ACTION BUTTON (left of jump button) ===
-    m_rect_action.set_size(btn_size, btn_size);
-    m_rect_action.set_pos(Vector(width - 2.5f * btn_size, height - btn_size));
-    m_draw_action = m_rect_action.grown(-m_rect_action.get_height() * 3 / 8);
 
     // === ESCAPE/PAUSE ===
     m_rect_escape.set_size(btn_size / 2, btn_size / 2);
@@ -243,7 +241,7 @@ MobileController::draw(DrawingContext& context)
     m_rect_debug.set_pos(Vector(width - btn_size / 2, 0));
     m_draw_debug = m_rect_debug.grown(-m_rect_debug.get_height() / 4);
 
-    // D-pad fallback layout (always calculated, drawn only when tilt is off)
+    // D-pad layout (bottom-left, always visible)
     float dpad_size = btn_size * 2.0f;
     m_rect_directions.set_size(dpad_size, dpad_size);
     m_rect_directions.set_pos(Vector(0.f, height - dpad_size));
@@ -253,23 +251,16 @@ MobileController::draw(DrawingContext& context)
   PaintStyle translucent;
   translucent.set_alpha(0.5f);
 
-  // Draw D-pad when tilt controls are not available
-  if (!use_tilt())
-  {
-    context.color().draw_surface_scaled(m_tex_directions, m_draw_directions, LAYER_GUI + 99, translucent);
-    if (m_input[CONTROL_INT(LEFT)])
-      context.color().draw_surface_scaled(m_tex_dir_hl_left, m_draw_directions, LAYER_GUI + 99, translucent);
-    if (m_input[CONTROL_INT(RIGHT)])
-      context.color().draw_surface_scaled(m_tex_dir_hl_right, m_draw_directions, LAYER_GUI + 99, translucent);
-    if (m_input[CONTROL_INT(UP)])
-      context.color().draw_surface_scaled(m_tex_dir_hl_up, m_draw_directions, LAYER_GUI + 99, translucent);
-    if (m_input[CONTROL_INT(DOWN)])
-      context.color().draw_surface_scaled(m_tex_dir_hl_down, m_draw_directions, LAYER_GUI + 99, translucent);
-  }
-
-  // Draw ACTION button
-  context.color().draw_surface_scaled(m_input[CONTROL_INT(ACTION)] ? m_tex_btn_press : m_tex_btn, m_draw_action, LAYER_GUI + 99, translucent);
-  context.color().draw_surface_scaled(m_tex_action, m_draw_action, LAYER_GUI + 99, translucent);
+  // Always draw D-pad (bottom-left) — works alongside tilt as a visible control
+  context.color().draw_surface_scaled(m_tex_directions, m_draw_directions, LAYER_GUI + 99, translucent);
+  if (m_input[CONTROL_INT(LEFT)])
+    context.color().draw_surface_scaled(m_tex_dir_hl_left, m_draw_directions, LAYER_GUI + 99, translucent);
+  if (m_input[CONTROL_INT(RIGHT)])
+    context.color().draw_surface_scaled(m_tex_dir_hl_right, m_draw_directions, LAYER_GUI + 99, translucent);
+  if (m_input[CONTROL_INT(UP)])
+    context.color().draw_surface_scaled(m_tex_dir_hl_up, m_draw_directions, LAYER_GUI + 99, translucent);
+  if (m_input[CONTROL_INT(DOWN)])
+    context.color().draw_surface_scaled(m_tex_dir_hl_down, m_draw_directions, LAYER_GUI + 99, translucent);
 
   // Draw JUMP button (short press = short hop, long press = full arc)
   PaintStyle jump_style;
@@ -380,10 +371,8 @@ MobileController::process_finger_down_event(const SDL_TouchFingerEvent& event)
     return true;
   }
 
-  return m_rect_action.contains(pos) ||
-    m_rect_escape.contains(pos) ||
-    m_rect_item.contains(pos) ||
-    (!use_tilt() && m_rect_directions.contains(pos)) ||
+  return m_rect_escape.contains(pos) ||
+    m_rect_directions.contains(pos) ||
     (g_config->developer_mode && m_rect_cheats.contains(pos)) ||
     (g_config->developer_mode && m_rect_debug.contains(pos));
 }
@@ -404,10 +393,8 @@ MobileController::process_finger_up_event(const SDL_TouchFingerEvent& event)
   }
 
   return m_rect_jump.contains(pos) ||
-    m_rect_action.contains(pos) ||
     m_rect_escape.contains(pos) ||
-    m_rect_item.contains(pos) ||
-    (!use_tilt() && m_rect_directions.contains(pos)) ||
+    m_rect_directions.contains(pos) ||
     (g_config->developer_mode && m_rect_cheats.contains(pos)) ||
     (g_config->developer_mode && m_rect_debug.contains(pos));
 }
@@ -431,10 +418,8 @@ MobileController::process_finger_motion_event(const SDL_TouchFingerEvent& event)
   }
 
   return m_rect_jump.contains(pos) ||
-    m_rect_action.contains(pos) ||
     m_rect_escape.contains(pos) ||
-    m_rect_item.contains(pos) ||
-    (!use_tilt() && m_rect_directions.contains(pos)) ||
+    m_rect_directions.contains(pos) ||
     (g_config->developer_mode && m_rect_cheats.contains(pos)) ||
     (g_config->developer_mode && m_rect_debug.contains(pos));
 }
@@ -447,14 +432,6 @@ MobileController::activate_widget_at_pos(float x, float y)
     return;
 
   Vector pos(x, y);
-
-  // ACTION button
-  if (m_rect_action.contains(pos))
-    m_input.set(CONTROL_INT(ACTION), true);
-
-  // ITEM button
-  if (m_rect_item.contains(pos))
-    m_input.set(CONTROL_INT(ITEM), true);
 
   // ESCAPE/PAUSE button
   if (m_rect_escape.contains(pos))
@@ -469,8 +446,8 @@ MobileController::activate_widget_at_pos(float x, float y)
       m_input.set(CONTROL_INT(DEBUG_MENU), true);
   }
 
-  // D-pad fallback: detect direction zones when tilt is not active
-  if (!use_tilt() && m_rect_directions.contains(pos))
+  // D-pad: always active (works alongside tilt)
+  if (m_rect_directions.contains(pos))
   {
     float cx = (m_rect_directions.get_left() + m_rect_directions.get_right()) / 2.0f;
     float cy = (m_rect_directions.get_top() + m_rect_directions.get_bottom()) / 2.0f;
