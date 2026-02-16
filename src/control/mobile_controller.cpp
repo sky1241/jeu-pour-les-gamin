@@ -230,11 +230,11 @@ MobileController::draw(DrawingContext& context)
     m_rect_directions.set_pos(Vector(pad, height - dpad_size - pad));
     m_draw_directions = m_rect_directions.grown(-m_rect_directions.get_height() / 8);
 
-    // === JUMP BUTTON (bottom-right, same Y axis as D-pad, 2x size) ===
-    float jump_size = dpad_size * 2.0f;
+    // === JUMP BUTTON (bottom-right, same size as D-pad) ===
+    float jump_size = dpad_size;
     m_rect_jump.set_size(jump_size, jump_size);
     m_rect_jump.set_pos(Vector(width - jump_size - pad, height - jump_size - pad));
-    m_draw_jump = m_rect_jump.grown(-m_rect_jump.get_height() * 3 / 8);
+    m_draw_jump = m_rect_jump.grown(-m_rect_jump.get_height() / 8);
 
     // === ESCAPE/PAUSE ===
     m_rect_escape.set_size(btn_size / 2, btn_size / 2);
