@@ -501,7 +501,7 @@ endif()
 ## Network: WebSocket + JSON for multiplayer
 target_link_libraries(supertux2 PUBLIC ixwebsocket::ixwebsocket nlohmann_json::nlohmann_json)
 if(WIN32)
-  target_link_libraries(supertux2 PUBLIC bcrypt)
+  target_link_libraries(supertux2 PUBLIC bcrypt ws2_32)
 endif()
 
 ## Install stuff

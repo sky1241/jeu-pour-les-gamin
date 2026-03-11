@@ -20,6 +20,7 @@ class WsClient {
   void Function(List<Map<String, dynamic>> players)? onStateUpdate;
   void Function()? onGameStart;
   void Function()? onDisconnect;
+  void Function(String winnerName)? onVictory;
 
   // Delta encoding: only send when input changes
   double _lastStickX = 0;
@@ -86,6 +87,10 @@ class WsClient {
       case 'start':
         gameStarted = true;
         onGameStart?.call();
+
+      case 'victory':
+        final winner = msg['winner_name'] as String? ?? 'Tux';
+        onVictory?.call(winner);
     }
   }
 

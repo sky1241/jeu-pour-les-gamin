@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'ws_client.dart';
 import 'joystick_widget.dart';
 import 'action_button.dart';
@@ -17,6 +18,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   double _stickY = 0;
   bool _btnA = false;
   bool _btnB = false;
+  String? _victoryWinner;
 
   @override
   void initState() {
@@ -24,6 +26,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
     widget.client.onDisconnect = () {
       if (!mounted) return;
       Navigator.of(context).pop();
+    };
+    widget.client.onVictory = (winner) {
+      if (!mounted) return;
+      HapticFeedback.heavyImpact();
+      setState(() => _victoryWinner = winner);
     };
   }
 
@@ -41,11 +48,13 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   void _onBtnAChanged(bool pressed) {
     _btnA = pressed;
+    if (pressed) HapticFeedback.lightImpact();
     _updateInput();
   }
 
   void _onBtnBChanged(bool pressed) {
     _btnB = pressed;
+    if (pressed) HapticFeedback.lightImpact();
     _updateInput();
   }
 
@@ -147,6 +156,32 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   ),
                 ),
               ),
+              // Victory overlay
+              if (_victoryWinner != null)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black54,
+                    alignment: Alignment.center,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          '🏆',
+                          style: TextStyle(fontSize: 64),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '$_victoryWinner wins!',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

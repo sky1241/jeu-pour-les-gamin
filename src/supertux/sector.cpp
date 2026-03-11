@@ -61,6 +61,7 @@
 #include "video/viewport.hpp"
 
 Sector* Sector::s_current = nullptr;
+int Sector::s_current_viewport_player = -1;
 
 Sector::Sector(Level& parent) :
   Base::Sector("sector"),
@@ -509,6 +510,7 @@ Sector::draw(DrawingContext& context)
     // Render each player's viewport
     for (int i = 0; i < num_players && i < static_cast<int>(viewports.size()); ++i)
     {
+      s_current_viewport_player = players[i]->get_id();
       context.push_transform();
       context.set_viewport(viewports[i]);
 
@@ -533,6 +535,7 @@ Sector::draw(DrawingContext& context)
       context.set_viewport(original_clip);
       context.pop_transform();
     }
+    s_current_viewport_player = -1;
 
     // Draw black divider lines
     if (num_players >= 2)

@@ -2064,6 +2064,15 @@ Player::draw(DrawingContext& context)
   if(Editor::is_active())
     return;
 
+  // Ghost renderer: in split-screen, other players are semi-transparent
+  const bool is_ghost = (Sector::s_current_viewport_player >= 0 &&
+                         m_id != Sector::s_current_viewport_player);
+  if (is_ghost)
+  {
+    context.push_transform();
+    context.set_alpha(0.4f);
+  }
+
   if (is_dead() && m_target && Sector::get().get_object_count<Player>([this](const Player& p){ return p.is_active() && &p != this; }))
   {
     auto* target = Sector::get().get_object_by_uid<Player>(*m_target);
@@ -2343,6 +2352,9 @@ Player::draw(DrawingContext& context)
     bubble_sprite.first->draw(context.color(), bubble_sprite.second, LAYER_TILES - 5);
   }
   m_sprite->set_color(m_stone ? Color(1.f, 1.f, 1.f) : power_color);
+
+  if (is_ghost)
+    context.pop_transform();
 }
 
 void

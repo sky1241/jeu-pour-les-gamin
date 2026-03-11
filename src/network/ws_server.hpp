@@ -46,6 +46,9 @@ public:
   /// Send a victory message to all connected phones.
   void broadcast_victory(const std::string& winner_name);
 
+  /// Check if the server is running.
+  bool is_running() const { return m_running; }
+
   /// Check if a "start" message was received (from player 1).
   bool consume_start_request();
 

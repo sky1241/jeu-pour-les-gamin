@@ -73,6 +73,10 @@ public:
   static Sector& get() { assert(s_current != nullptr); return *s_current; }
   static Sector* current() { return s_current; }
 
+  /** Split-screen: ID of the player whose viewport is currently being drawn (-1 = all). */
+  static int s_current_viewport_player;
+
+
 public:
   Sector(Level& parent);
   ~Sector() override;

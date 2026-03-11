@@ -55,6 +55,8 @@
 #include "video/drawing_context.hpp"
 #include "video/surface.hpp"
 #include "worldmap/worldmap.hpp"
+#include "network/ws_server.hpp"
+#include "supertux/globals.hpp"
 
 static const float SAFE_TIME = 1.0f;
 static const int SHRINKFADE_LAYER = LAYER_LIGHTMAP - 1;
@@ -1019,6 +1021,13 @@ GameSession::start_sequence(Player* caller, Sequence seq, const SequenceData* da
     p->set_winning();
     p->set_controller(m_end_sequence->get_controller(p->get_id()));
     p->set_speedlimit(230); // MAX_WALK_XM.
+  }
+
+  // Broadcast victory to all connected phones.
+  if (g_ws_server && g_ws_server->get_player_count() > 0)
+  {
+    std::string winner = caller ? ("Player " + std::to_string(caller->get_id() + 1)) : "Tux";
+    g_ws_server->broadcast_victory(winner);
   }
 
   // Stop all clocks.

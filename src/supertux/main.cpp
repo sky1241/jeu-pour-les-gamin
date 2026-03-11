@@ -47,6 +47,7 @@ extern "C" {
 #include "gui/menu_manager.hpp"
 #include "gui/notification.hpp"
 #include "math/random.hpp"
+#include "network/udp_discovery.hpp"
 #include "network/ws_server.hpp"
 #include "object/player.hpp"
 #include "object/spawnpoint.hpp"
@@ -742,8 +743,16 @@ Main::launch_game(const CommandLineArguments& args)
     log_warning << "Failed to start WebSocket server — multiplayer disabled" << std::endl;
   }
 
+  // Start UDP discovery broadcaster so phones can find us on the LAN
+  network::UdpDiscovery udp_discovery;
+  if (ws_server.is_running())
+  {
+    udp_discovery.start();
+  }
+
   m_screen_manager->run();
 
+  udp_discovery.stop();
   ws_server.stop();
   g_ws_server = nullptr;
 }
