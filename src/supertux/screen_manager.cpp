@@ -358,19 +358,22 @@ ScreenManager::update_gamelogic(float dt_sec)
       for (int i = 0; i < static_cast<int>(player_ids.size()) && i < static_cast<int>(players.size()); ++i)
       {
         auto it = all_inputs.find(player_ids[i]);
-        if (it != all_inputs.end() && it->second.connected)
+        bool is_connected = (it != all_inputs.end() && it->second.connected);
+
+        if (i == 0)
         {
-          if (i == 0)
-          {
-            // Player 1: apply to main controller
+          // Player 1: apply to main controller only when connected
+          if (is_connected)
             network::InputDispatcher::apply_to_controller(it->second, controller);
-          }
-          else if (i < network::MAX_PLAYERS)
-          {
-            // Additional players: update their network controller
-            s_net_controllers[i].update(); // shift current -> old for pressed/released detection
+        }
+        else if (i < network::MAX_PLAYERS)
+        {
+          // Always advance old-state so pressed()/released() work correctly
+          s_net_controllers[i].update();
+          if (is_connected)
             network::InputDispatcher::apply_to_controller(it->second, s_net_controllers[i]);
-          }
+          else
+            s_net_controllers[i].reset(); // disconnected: clear all inputs so Tux stops moving
         }
       }
     }

@@ -56,6 +56,15 @@ class WsClient {
   }) : playerId = _generatePlayerId();
 
   Future<void> connect() async {
+    // Reset state so reconnect always sends a full first frame
+    _lastStickX = -999;
+    _lastStickY = -999;
+    _lastBtnA = false;
+    _lastBtnB = false;
+    gameStarted = false;
+    players.clear();
+    color = null;
+
     final uri = Uri.parse('ws://$host:$port');
     _channel = WebSocketChannel.connect(uri);
 
@@ -93,12 +102,15 @@ class WsClient {
           ..clear()
           ..addAll(list.cast<Map<String, dynamic>>());
 
-        // FIXED: find own color by looking up our playerId in the players list
-        // (server doesn't send your_id/your_color as top-level fields)
+        // find own color by looking up our playerId in the players list
         final self = players.where((p) => p['player_id'] == playerId).firstOrNull;
         if (self != null) {
           color = self['color'] as String?;
         }
+
+        // Lobby state resets game-started flag (e.g. after victory → return to lobby)
+        final status = msg['status'] as String?;
+        if (status == 'lobby') gameStarted = false;
 
         onStateUpdate?.call(players);
 
