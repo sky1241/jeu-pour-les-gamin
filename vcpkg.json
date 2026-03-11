@@ -8,7 +8,9 @@
     "physfs",
     "glm",
     "libpng",
-    "zlib"
+    "zlib",
+    "nlohmann-json",
+    "ixwebsocket"
   ],
   "features": {
     "nonwasm": {

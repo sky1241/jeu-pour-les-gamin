@@ -44,6 +44,8 @@
 #include "video/compositor.hpp"
 #include "video/drawing_context.hpp"
 #include "worldmap/worldmap.hpp"
+#include "network/input_dispatcher.hpp"
+#include "network/ws_server.hpp"
 
 #include <stdio.h>
 #include <chrono>
@@ -313,6 +315,22 @@ ScreenManager::update_gamelogic(float dt_sec)
   {
     m_mobile_controller.update();
     m_mobile_controller.apply(controller);
+  }
+
+  // Apply phone controller inputs (player 1 = first connected phone)
+  if (g_ws_server && g_ws_server->get_player_count() > 0)
+  {
+    auto player_ids = g_ws_server->get_player_ids();
+    auto all_inputs = g_ws_server->get_all_inputs();
+
+    if (!player_ids.empty())
+    {
+      auto it = all_inputs.find(player_ids[0]);
+      if (it != all_inputs.end() && it->second.connected)
+      {
+        network::InputDispatcher::apply_to_controller(it->second, controller);
+      }
+    }
   }
 
   SquirrelVirtualMachine::current()->update(g_game_time);

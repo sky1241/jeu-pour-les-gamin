@@ -26,7 +26,10 @@ class Config;
 #define SCREEN_WIDTH (VideoSystem::current()->get_viewport().get_screen_width())
 #define SCREEN_HEIGHT (VideoSystem::current()->get_viewport().get_screen_height())
 
+namespace network { class WsServer; }
+
 extern Config* g_config;
+extern network::WsServer* g_ws_server;
 
 extern float g_game_time;
 extern float g_real_time;

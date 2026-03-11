@@ -80,7 +80,7 @@ Config::Config() :
   mobile_controls(false),
   m_mobile_controls_scale(1.3f),
   touch_controls_visible(true),
-  tilt_enabled(true),
+  tilt_enabled(false),
   tilt_deadzone(1.5f),
   tilt_sensitivity(1.0f),
   addons(),

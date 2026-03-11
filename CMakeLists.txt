@@ -189,6 +189,10 @@ if(NOT USE_SYSTEM_SDL2_TTF)
     PKG RAQM PKG_USE RAQM CONFIG PKG_CONFIG libraqm raqm)
 endif()
 
+## Network: WebSocket server + JSON for multiplayer
+find_package(ixwebsocket CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+
 if(NOT EMSCRIPTEN)
   add_package(TARGET SDL2
     PKG SDL2 PKG_USE SDL2::SDL2 CONFIG REQUIRED PKG_CONFIG sdl2 SDL2
@@ -492,6 +496,12 @@ endif()
 if(ANDROID)
   target_link_libraries(supertux2 PUBLIC log)
   target_compile_definitions(supertux2 PUBLIC -D__ANDROID__ -DANDROID)
+endif()
+
+## Network: WebSocket + JSON for multiplayer
+target_link_libraries(supertux2 PUBLIC ixwebsocket::ixwebsocket nlohmann_json::nlohmann_json)
+if(WIN32)
+  target_link_libraries(supertux2 PUBLIC bcrypt)
 endif()
 
 ## Install stuff

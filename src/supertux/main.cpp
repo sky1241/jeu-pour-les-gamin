@@ -47,6 +47,7 @@ extern "C" {
 #include "gui/menu_manager.hpp"
 #include "gui/notification.hpp"
 #include "math/random.hpp"
+#include "network/ws_server.hpp"
 #include "object/player.hpp"
 #include "object/spawnpoint.hpp"
 #include "physfs/physfs_file_system.hpp"
@@ -729,7 +730,22 @@ Main::launch_game(const CommandLineArguments& args)
     }
   }
 
+  // Start WebSocket server for phone controllers
+  network::WsServer ws_server;
+  g_ws_server = &ws_server;
+  if (ws_server.start())
+  {
+    log_info << "WebSocket server started for phone controllers on port " << network::WS_PORT << std::endl;
+  }
+  else
+  {
+    log_warning << "Failed to start WebSocket server — multiplayer disabled" << std::endl;
+  }
+
   m_screen_manager->run();
+
+  ws_server.stop();
+  g_ws_server = nullptr;
 }
 
 int

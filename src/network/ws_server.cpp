@@ -1,0 +1,313 @@
+// SuperTux Multi — WebSocket Server
+// Copyright (C) 2026 sky1241
+// GPL v3+
+
+#include "network/ws_server.hpp"
+
+#include <algorithm>
+
+#include <ixwebsocket/IXWebSocketServer.h>
+#include <ixwebsocket/IXWebSocket.h>
+#include <nlohmann/json.hpp>
+
+#include "util/log.hpp"
+
+using json = nlohmann::json;
+
+namespace network {
+
+WsServer::WsServer() :
+  m_server(nullptr),
+  m_mutex(),
+  m_inputs(),
+  m_player_order(),
+  m_ws_to_player(),
+  m_start_requested(false),
+  m_running(false)
+{
+}
+
+WsServer::~WsServer()
+{
+  stop();
+}
+
+bool
+WsServer::start()
+{
+  if (m_running)
+    return true;
+
+  m_server = std::make_unique<ix::WebSocketServer>(WS_PORT, "0.0.0.0");
+
+  m_server->setOnClientMessageCallback(
+    [this](std::shared_ptr<ix::ConnectionState> state,
+           ix::WebSocket& ws,
+           const ix::WebSocketMessagePtr& msg)
+    {
+      if (msg->type == ix::WebSocketMessageType::Message)
+      {
+        on_message(ws, msg->str);
+      }
+      else if (msg->type == ix::WebSocketMessageType::Close)
+      {
+        on_close(ws);
+      }
+      else if (msg->type == ix::WebSocketMessageType::Open)
+      {
+        log_info << "[WS] New connection from " << state->getRemoteIp() << std::endl;
+      }
+    }
+  );
+
+  auto res = m_server->listen();
+  if (!res.first)
+  {
+    log_warning << "[WS] Failed to listen on port " << WS_PORT << ": " << res.second << std::endl;
+    return false;
+  }
+
+  m_server->start();
+  m_running = true;
+  log_info << "[WS] Server started on port " << WS_PORT << std::endl;
+
+  return true;
+}
+
+void
+WsServer::stop()
+{
+  if (!m_running)
+    return;
+
+  if (m_server)
+  {
+    m_server->stop();
+    m_server.reset();
+  }
+  m_running = false;
+  log_info << "[WS] Server stopped" << std::endl;
+}
+
+void
+WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
+{
+  try
+  {
+    auto j = json::parse(msg);
+    std::string type = j.value("type", "");
+
+    if (type == MSG_JOIN)
+    {
+      std::string pid = j.value("player_id", "");
+      std::string pname = j.value("player_name", "Player");
+
+      if (pid.empty())
+        return;
+
+      std::lock_guard<std::mutex> lock(m_mutex);
+
+      if (static_cast<int>(m_player_order.size()) >= MAX_PLAYERS)
+      {
+        log_warning << "[WS] Max players reached, rejecting " << pname << std::endl;
+        return;
+      }
+
+      // Assign color based on join order
+      int idx = static_cast<int>(m_player_order.size());
+
+      PlayerInput input;
+      input.player_id = pid;
+      input.player_name = pname;
+      input.color = PLAYER_COLORS[idx % MAX_PLAYERS];
+      input.connected = true;
+
+      m_inputs[pid] = input;
+      m_ws_to_player[&ws] = pid;
+
+      // Track join order (avoid duplicates on reconnect)
+      if (std::find(m_player_order.begin(), m_player_order.end(), pid) == m_player_order.end())
+      {
+        m_player_order.push_back(pid);
+      }
+
+      log_info << "[WS] Player joined: " << pname << " (" << pid << ") as Player " << (idx + 1) << std::endl;
+
+      // Build state JSON while holding the lock, then send after release
+      json state_j;
+      state_j["type"] = MSG_STATE;
+      state_j["level"] = "";
+      state_j["status"] = STATUS_LOBBY;
+      json players_arr = json::array();
+      for (const auto& order_pid : m_player_order)
+      {
+        auto inp_it = m_inputs.find(order_pid);
+        if (inp_it != m_inputs.end())
+        {
+          json pj;
+          pj["player_id"] = inp_it->second.player_id;
+          pj["player_name"] = inp_it->second.player_name;
+          pj["color"] = inp_it->second.color;
+          players_arr.push_back(pj);
+        }
+      }
+      state_j["players"] = players_arr;
+      std::string state_str = state_j.dump();
+
+      // Send state to the new player (and broadcast to all)
+      for (auto& [client_ws, client_pid] : m_ws_to_player)
+      {
+        client_ws->send(state_str);
+      }
+    }
+    else if (type == MSG_INPUT)
+    {
+      std::string pid = j.value("player_id", "");
+
+      std::lock_guard<std::mutex> lock(m_mutex);
+      auto it = m_inputs.find(pid);
+      if (it != m_inputs.end())
+      {
+        it->second.stick_x = j.value("stick_x", 0.0f);
+        it->second.stick_y = j.value("stick_y", 0.0f);
+        it->second.btn_a   = j.value("btn_a", false);
+        it->second.btn_b   = j.value("btn_b", false);
+      }
+    }
+    else if (type == MSG_LEAVE)
+    {
+      on_close(ws);
+    }
+    else if (type == MSG_START)
+    {
+      std::string pid = j.value("player_id", "");
+
+      std::lock_guard<std::mutex> lock(m_mutex);
+
+      // Only player 1 (first connected) can start
+      if (!m_player_order.empty() && m_player_order[0] == pid)
+      {
+        m_start_requested = true;
+        log_info << "[WS] Start requested by " << pid << std::endl;
+      }
+    }
+  }
+  catch (const json::parse_error& e)
+  {
+    log_warning << "[WS] Invalid JSON: " << e.what() << std::endl;
+  }
+}
+
+void
+WsServer::on_close(ix::WebSocket& ws)
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  auto it = m_ws_to_player.find(&ws);
+  if (it != m_ws_to_player.end())
+  {
+    std::string pid = it->second;
+    log_info << "[WS] Player disconnected: " << pid << std::endl;
+
+    // Mark as disconnected but keep in map (for reconnection)
+    auto input_it = m_inputs.find(pid);
+    if (input_it != m_inputs.end())
+    {
+      input_it->second.connected = false;
+      input_it->second.stick_x = 0.0f;
+      input_it->second.stick_y = 0.0f;
+      input_it->second.btn_a = false;
+      input_it->second.btn_b = false;
+    }
+
+    m_ws_to_player.erase(it);
+  }
+}
+
+std::map<std::string, PlayerInput>
+WsServer::get_all_inputs() const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_inputs;
+}
+
+std::vector<std::string>
+WsServer::get_player_ids() const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_player_order;
+}
+
+int
+WsServer::get_player_count() const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return static_cast<int>(m_player_order.size());
+}
+
+bool
+WsServer::consume_start_request()
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  bool val = m_start_requested;
+  m_start_requested = false;
+  return val;
+}
+
+void
+WsServer::broadcast_state(const std::string& level, const std::string& status)
+{
+  broadcast(make_state_json(level, status));
+}
+
+void
+WsServer::broadcast_victory(const std::string& winner_name)
+{
+  json j;
+  j["type"] = MSG_VICTORY;
+  j["winner_name"] = winner_name;
+  broadcast(j.dump());
+}
+
+void
+WsServer::broadcast(const std::string& json_str)
+{
+  if (!m_server)
+    return;
+
+  // Use IXWebSocketServer's getClients() to broadcast
+  auto clients = m_server->getClients();
+  for (auto& client : clients)
+  {
+    client->send(json_str);
+  }
+}
+
+std::string
+WsServer::make_state_json(const std::string& level, const std::string& status) const
+{
+  json j;
+  j["type"] = MSG_STATE;
+  j["level"] = level;
+  j["status"] = status;
+
+  json players = json::array();
+  std::lock_guard<std::mutex> lock(m_mutex);
+  for (const auto& pid : m_player_order)
+  {
+    auto it = m_inputs.find(pid);
+    if (it != m_inputs.end())
+    {
+      json p;
+      p["player_id"] = it->second.player_id;
+      p["player_name"] = it->second.player_name;
+      p["color"] = it->second.color;
+      players.push_back(p);
+    }
+  }
+  j["players"] = players;
+
+  return j.dump();
+}
+
+} // namespace network
