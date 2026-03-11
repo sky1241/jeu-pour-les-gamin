@@ -105,62 +105,73 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
       if (pid.empty())
         return;
 
-      std::lock_guard<std::mutex> lock(m_mutex);
-
-      // Reconnect: if UUID already known, allow regardless of player count
-      bool is_reconnect = std::find(m_player_order.begin(), m_player_order.end(), pid)
-                          != m_player_order.end();
-      if (!is_reconnect && static_cast<int>(m_player_order.size()) >= MAX_PLAYERS)
+      std::string state_str;
       {
-        log_warning << "[WS] Max players reached, rejecting " << pname << std::endl;
-        return;
-      }
+        std::lock_guard<std::mutex> lock(m_mutex);
 
-      // Assign color based on join order
-      int idx = static_cast<int>(m_player_order.size());
+        auto order_it = std::find(m_player_order.begin(), m_player_order.end(), pid);
+        bool is_reconnect = (order_it != m_player_order.end());
 
-      PlayerInput input;
-      input.player_id = pid;
-      input.player_name = pname;
-      input.color = PLAYER_COLORS[idx % MAX_PLAYERS];
-      input.connected = true;
-
-      m_inputs[pid] = input;
-      m_ws_to_player[&ws] = pid;
-
-      // Track join order (avoid duplicates on reconnect)
-      if (std::find(m_player_order.begin(), m_player_order.end(), pid) == m_player_order.end())
-      {
-        m_player_order.push_back(pid);
-      }
-
-      log_info << "[WS] Player joined: " << pname << " (" << pid << ") as Player " << (idx + 1) << std::endl;
-
-      // Build state JSON while holding the lock, then send after release
-      json state_j;
-      state_j["type"] = MSG_STATE;
-      state_j["level"] = "";
-      state_j["status"] = STATUS_LOBBY;
-      json players_arr = json::array();
-      for (const auto& order_pid : m_player_order)
-      {
-        auto inp_it = m_inputs.find(order_pid);
-        if (inp_it != m_inputs.end())
+        if (!is_reconnect && static_cast<int>(m_player_order.size()) >= MAX_PLAYERS)
         {
-          json pj;
-          pj["player_id"] = inp_it->second.player_id;
-          pj["player_name"] = inp_it->second.player_name;
-          pj["color"] = inp_it->second.color;
-          players_arr.push_back(pj);
+          log_warning << "[WS] Max players reached, rejecting " << pname << std::endl;
+          return;
         }
-      }
-      state_j["players"] = players_arr;
-      std::string state_str = state_j.dump();
 
-      // Send state to the new player (and broadcast to all)
-      for (auto& [client_ws, client_pid] : m_ws_to_player)
+        m_ws_to_player[&ws] = pid;
+
+        if (is_reconnect)
+        {
+          // Preserve original color and slot — only restore connected flag
+          auto inp_it = m_inputs.find(pid);
+          if (inp_it != m_inputs.end())
+          {
+            inp_it->second.connected = true;
+            inp_it->second.player_name = pname;
+          }
+          int idx = static_cast<int>(std::distance(m_player_order.begin(), order_it));
+          log_info << "[WS] Player reconnected: " << pname << " (" << pid << ") slot " << (idx + 1) << std::endl;
+        }
+        else
+        {
+          int idx = static_cast<int>(m_player_order.size());
+          PlayerInput input;
+          input.player_id = pid;
+          input.player_name = pname;
+          input.color = PLAYER_COLORS[idx % MAX_PLAYERS];
+          input.connected = true;
+          m_inputs[pid] = input;
+          m_player_order.push_back(pid);
+          log_info << "[WS] Player joined: " << pname << " (" << pid << ") as Player " << (idx + 1) << std::endl;
+        }
+
+        // Build state JSON and collect clients — all while holding the lock
+        json state_j;
+        state_j["type"] = MSG_STATE;
+        state_j["level"] = "";
+        state_j["status"] = STATUS_LOBBY;
+        json players_arr = json::array();
+        for (const auto& order_pid : m_player_order)
+        {
+          auto inp_it = m_inputs.find(order_pid);
+          if (inp_it != m_inputs.end())
+          {
+            json pj;
+            pj["player_id"] = inp_it->second.player_id;
+            pj["player_name"] = inp_it->second.player_name;
+            pj["color"] = inp_it->second.color;
+            players_arr.push_back(pj);
+          }
+        }
+        state_j["players"] = players_arr;
+        state_str = state_j.dump();
+      } // release lock before sending
+
+      // Broadcast state to all clients (send is non-blocking in IXWebSocket)
+      auto clients = m_server->getClients();
+      for (auto& client : clients)
       {
-        client_ws->send(state_str);
+        client->send(state_str);
       }
     }
     else if (type == MSG_INPUT)
@@ -185,21 +196,27 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
     {
       std::string pid = j.value("player_id", "");
 
-      std::lock_guard<std::mutex> lock(m_mutex);
-
-      // Only player 1 (first connected) can start
-      if (!m_player_order.empty() && m_player_order[0] == pid)
+      bool do_broadcast_start = false;
       {
-        m_start_requested = true;
-        log_info << "[WS] Start requested by " << pid << std::endl;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        // Only player 1 (first connected) can start
+        if (!m_player_order.empty() && m_player_order[0] == pid)
+        {
+          m_start_requested = true;
+          do_broadcast_start = true;
+          log_info << "[WS] Start requested by " << pid << std::endl;
+        }
+      } // release lock before sending
 
-        // Broadcast "start" immediately so all controller UIs switch to game view
+      if (do_broadcast_start)
+      {
         json start_j;
         start_j["type"] = MSG_START;
         std::string start_str = start_j.dump();
-        for (auto& [client_ws, client_pid] : m_ws_to_player)
+        auto clients = m_server->getClients();
+        for (auto& client : clients)
         {
-          client_ws->send(start_str);
+          client->send(start_str);
         }
       }
     }
