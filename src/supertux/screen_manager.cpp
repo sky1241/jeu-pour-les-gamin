@@ -346,9 +346,12 @@ ScreenManager::update_gamelogic(float dt_sec)
         sector->flush_game_objects();
         players = sector->get_players();
 
-        // Assign network controller to the new player
+        // Assign network controller to the new player (reset first to clear stale state)
         if (new_id < network::MAX_PLAYERS)
+        {
+          s_net_controllers[new_id].reset();
           players[new_id]->set_controller(&s_net_controllers[new_id]);
+        }
       }
 
       // Update network controllers and apply inputs

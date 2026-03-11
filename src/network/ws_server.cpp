@@ -112,10 +112,38 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
         auto order_it = std::find(m_player_order.begin(), m_player_order.end(), pid);
         bool is_reconnect = (order_it != m_player_order.end());
 
-        if (!is_reconnect && static_cast<int>(m_player_order.size()) >= MAX_PLAYERS)
+        if (!is_reconnect)
         {
-          log_warning << "[WS] Max players reached, rejecting " << pname << std::endl;
-          return;
+          // Count only currently connected players — disconnected slots can be reclaimed
+          int connected_count = 0;
+          for (const auto& order_pid : m_player_order)
+          {
+            auto inp_it = m_inputs.find(order_pid);
+            if (inp_it != m_inputs.end() && inp_it->second.connected)
+              connected_count++;
+          }
+
+          if (connected_count >= MAX_PLAYERS)
+          {
+            log_warning << "[WS] Max active players reached, rejecting " << pname << std::endl;
+            return;
+          }
+
+          // All UUID slots occupied but we have room (some disconnected) — evict oldest disconnected
+          if (static_cast<int>(m_player_order.size()) >= MAX_PLAYERS)
+          {
+            for (auto slot_it = m_player_order.begin(); slot_it != m_player_order.end(); ++slot_it)
+            {
+              auto inp_it = m_inputs.find(*slot_it);
+              if (inp_it != m_inputs.end() && !inp_it->second.connected)
+              {
+                log_info << "[WS] Evicting stale slot: " << *slot_it << std::endl;
+                m_inputs.erase(inp_it);
+                m_player_order.erase(slot_it);
+                break;
+              }
+            }
+          }
         }
 
         m_ws_to_player[&ws] = pid;
@@ -134,11 +162,23 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
         }
         else
         {
+          // Assign first color not already in use (handles gaps after evictions)
+          std::set<std::string> used_colors;
+          for (const auto& order_pid : m_player_order)
+          {
+            auto inp_it = m_inputs.find(order_pid);
+            if (inp_it != m_inputs.end())
+              used_colors.insert(inp_it->second.color);
+          }
+          int color_idx = 0;
+          while (color_idx < MAX_PLAYERS && used_colors.count(PLAYER_COLORS[color_idx]))
+            color_idx++;
+
           int idx = static_cast<int>(m_player_order.size());
           PlayerInput input;
           input.player_id = pid;
           input.player_name = pname;
-          input.color = PLAYER_COLORS[idx % MAX_PLAYERS];
+          input.color = PLAYER_COLORS[color_idx % MAX_PLAYERS];
           input.connected = true;
           m_inputs[pid] = input;
           m_player_order.push_back(pid);
@@ -154,7 +194,7 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
         for (const auto& order_pid : m_player_order)
         {
           auto inp_it = m_inputs.find(order_pid);
-          if (inp_it != m_inputs.end())
+          if (inp_it != m_inputs.end() && inp_it->second.connected)
           {
             json pj;
             pj["player_id"] = inp_it->second.player_id;
@@ -199,8 +239,18 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
       bool do_broadcast_start = false;
       {
         std::lock_guard<std::mutex> lock(m_mutex);
-        // Only player 1 (first connected) can start
-        if (!m_player_order.empty() && m_player_order[0] == pid)
+        // Only the first *connected* player (session host) can start
+        std::string host_pid;
+        for (const auto& order_pid : m_player_order)
+        {
+          auto inp_it = m_inputs.find(order_pid);
+          if (inp_it != m_inputs.end() && inp_it->second.connected)
+          {
+            host_pid = order_pid;
+            break;
+          }
+        }
+        if (!host_pid.empty() && host_pid == pid)
         {
           m_start_requested = true;
           do_broadcast_start = true;
@@ -332,7 +382,7 @@ WsServer::make_state_json(const std::string& level, const std::string& status) c
   for (const auto& pid : m_player_order)
   {
     auto it = m_inputs.find(pid);
-    if (it != m_inputs.end())
+    if (it != m_inputs.end() && it->second.connected)
     {
       json p;
       p["player_id"] = it->second.player_id;
