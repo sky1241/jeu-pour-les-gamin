@@ -107,7 +107,10 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
 
       std::lock_guard<std::mutex> lock(m_mutex);
 
-      if (static_cast<int>(m_player_order.size()) >= MAX_PLAYERS)
+      // Reconnect: if UUID already known, allow regardless of player count
+      bool is_reconnect = std::find(m_player_order.begin(), m_player_order.end(), pid)
+                          != m_player_order.end();
+      if (!is_reconnect && static_cast<int>(m_player_order.size()) >= MAX_PLAYERS)
       {
         log_warning << "[WS] Max players reached, rejecting " << pname << std::endl;
         return;
@@ -189,6 +192,15 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
       {
         m_start_requested = true;
         log_info << "[WS] Start requested by " << pid << std::endl;
+
+        // Broadcast "start" immediately so all controller UIs switch to game view
+        json start_j;
+        start_j["type"] = MSG_START;
+        std::string start_str = start_j.dump();
+        for (auto& [client_ws, client_pid] : m_ws_to_player)
+        {
+          client_ws->send(start_str);
+        }
       }
     }
   }

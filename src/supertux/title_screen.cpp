@@ -38,6 +38,8 @@
 #include "supertux/savegame.hpp"
 #include "supertux/screen_manager.hpp"
 #include "supertux/sector.hpp"
+#include "network/ws_server.hpp"
+#include "supertux/game_manager.hpp"
 #include "supertux/world.hpp"
 #include "video/compositor.hpp"
 #include "video/drawing_context.hpp"
@@ -228,6 +230,25 @@ TitleScreen::update(float dt_sec, const Controller& controller)
   ScreenManager::current()->set_speed(0.6f);
 
   update_level(dt_sec);
+
+  // Auto-start World 1 when a phone controller sends "start"
+  if (g_ws_server && g_ws_server->consume_start_request())
+  {
+    try
+    {
+      auto world = World::from_directory("levels/world1");
+      if (world && GameManager::current())
+      {
+        MenuManager::instance().clear_menu_stack();
+        GameManager::current()->start_worldmap(*world, "", "");
+        return;
+      }
+    }
+    catch (const std::exception& e)
+    {
+      log_warning << "[WS] Failed to start world1 from controller: " << e.what() << std::endl;
+    }
+  }
 
   // Re-open main menu, if it was closed
   if (!MenuManager::instance().is_active() && !ScreenManager::current()->has_pending_fadeout())
