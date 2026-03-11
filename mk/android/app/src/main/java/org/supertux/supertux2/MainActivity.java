@@ -107,8 +107,12 @@ public class MainActivity extends SDLActivity {
         // Listen for Samsung Smart View / Miracast broadcasts
         IntentFilter filter = new IntentFilter();
         filter.addAction("android.hardware.display.action.WIFI_DISPLAY_STATUS_CHANGED");
-        filter.addAction("android.intent.action.SCREEN_ON"); // Resume check on wake
-        registerReceiver(mWifiDisplayReceiver, filter);
+        // Register as not exported (Android 13+ requirement for dynamic receivers)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(mWifiDisplayReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(mWifiDisplayReceiver, filter);
+        }
 
         // Check if already connected
         if (checkForExternalDisplay()) {

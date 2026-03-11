@@ -37,6 +37,8 @@
 	<!-- WiFi for multiplayer and Smart View -->
 	<uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
 	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+	<!-- Needed for UDP multicast/broadcast on some Samsung devices -->
+	<uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
 
 	<!-- if you want to capture audio, uncomment this. -->
 	<!-- <uses-permission android:name="android.permission.RECORD_AUDIO" /> -->

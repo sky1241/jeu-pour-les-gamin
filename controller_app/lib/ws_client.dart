@@ -1,14 +1,28 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:web_socket_channel/web_socket_channel.dart';
+
+String _generatePlayerId() {
+  final rng = Random.secure();
+  final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // UUID version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // UUID variant
+  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).toList();
+  return '${hex.sublist(0, 4).join()}-${hex.sublist(4, 6).join()}-'
+      '${hex.sublist(6, 8).join()}-${hex.sublist(8, 10).join()}-'
+      '${hex.sublist(10, 16).join()}';
+}
 
 class WsClient {
   final String host;
   final int port;
   final String playerName;
 
+  // Generated once at creation — never changes across reconnects
+  final String playerId;
+
   WebSocketChannel? _channel;
-  String? playerId;
   String? color;
   bool connected = false;
 
@@ -39,31 +53,29 @@ class WsClient {
     required this.host,
     required this.port,
     required this.playerName,
-  });
+  }) : playerId = _generatePlayerId();
 
   Future<void> connect() async {
     final uri = Uri.parse('ws://$host:$port');
     _channel = WebSocketChannel.connect(uri);
 
-    // Wait for the connection to be ready
     await _channel!.ready;
 
     connected = true;
 
-    // Listen for messages
     _channel!.stream.listen(
       _onMessage,
       onDone: _onDone,
       onError: (e) => _onDone(),
     );
 
-    // Send join message
+    // FIXED: send player_id and player_name (server rejects if player_id empty)
     _send({
       'type': 'join',
-      'name': playerName,
+      'player_id': playerId,
+      'player_name': playerName,
     });
 
-    // Start 60 Hz input send loop
     _sendTimer = Timer.periodic(
       const Duration(milliseconds: 16), // ~60 Hz
       (_) => _sendInputIfChanged(),
@@ -76,12 +88,18 @@ class WsClient {
 
     switch (type) {
       case 'state':
-        playerId = msg['your_id'] as String?;
-        color = msg['your_color'] as String?;
         final list = msg['players'] as List<dynamic>? ?? [];
         players
           ..clear()
           ..addAll(list.cast<Map<String, dynamic>>());
+
+        // FIXED: find own color by looking up our playerId in the players list
+        // (server doesn't send your_id/your_color as top-level fields)
+        final self = players.where((p) => p['player_id'] == playerId).firstOrNull;
+        if (self != null) {
+          color = self['color'] as String?;
+        }
+
         onStateUpdate?.call(players);
 
       case 'start':
@@ -97,6 +115,7 @@ class WsClient {
   void _onDone() {
     connected = false;
     _sendTimer?.cancel();
+    _channel = null;
     onDisconnect?.call();
   }
 
@@ -115,7 +134,6 @@ class WsClient {
   void _sendInputIfChanged() {
     if (!connected) return;
 
-    // Quantize stick to reduce noise (2 decimal places)
     final qx = ((_stickX * 100).roundToDouble()) / 100;
     final qy = ((_stickY * 100).roundToDouble()) / 100;
 
@@ -123,7 +141,7 @@ class WsClient {
         qy == _lastStickY &&
         _btnA == _lastBtnA &&
         _btnB == _lastBtnB) {
-      return; // No change, skip
+      return;
     }
 
     _lastStickX = qx;
@@ -131,8 +149,10 @@ class WsClient {
     _lastBtnA = _btnA;
     _lastBtnB = _btnB;
 
+    // FIXED: include player_id so server can find the right input slot
     _send({
       'type': 'input',
+      'player_id': playerId,
       'stick_x': qx,
       'stick_y': qy,
       'btn_a': _btnA,
@@ -141,7 +161,8 @@ class WsClient {
   }
 
   void sendStart() {
-    _send({'type': 'start'});
+    // FIXED: include player_id (only player 1 can start)
+    _send({'type': 'start', 'player_id': playerId});
   }
 
   void _send(Map<String, dynamic> msg) {
@@ -152,6 +173,7 @@ class WsClient {
   void disconnect() {
     _sendTimer?.cancel();
     _channel?.sink.close();
+    _channel = null;
     connected = false;
   }
 }

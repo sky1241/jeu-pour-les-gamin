@@ -11,7 +11,6 @@ class DiscoveredServer {
 
 class Discovery {
   RawDatagramSocket? _socket;
-  Timer? _timer;
   final void Function(DiscoveredServer server)? onFound;
 
   Discovery({this.onFound});
@@ -46,7 +45,6 @@ class Discovery {
   }
 
   void stop() {
-    _timer?.cancel();
     _socket?.close();
     _socket = null;
   }

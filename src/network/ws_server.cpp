@@ -242,7 +242,14 @@ int
 WsServer::get_player_count() const
 {
   std::lock_guard<std::mutex> lock(m_mutex);
-  return static_cast<int>(m_player_order.size());
+  int count = 0;
+  for (const auto& pid : m_player_order)
+  {
+    auto it = m_inputs.find(pid);
+    if (it != m_inputs.end() && it->second.connected)
+      count++;
+  }
+  return count;
 }
 
 bool
