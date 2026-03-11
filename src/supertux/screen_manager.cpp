@@ -20,6 +20,7 @@
 
 #include "addon/addon_manager.hpp"
 #include "audio/sound_manager.hpp"
+#include "control/controller.hpp"
 #include "control/input_manager.hpp"
 #include "gui/dialog.hpp"
 #include "gui/menu_manager.hpp"
@@ -317,18 +318,67 @@ ScreenManager::update_gamelogic(float dt_sec)
     m_mobile_controller.apply(controller);
   }
 
-  // Apply phone controller inputs (player 1 = first connected phone)
+  // Apply phone controller inputs to all players
   if (g_ws_server && g_ws_server->get_player_count() > 0)
   {
     auto player_ids = g_ws_server->get_player_ids();
     auto all_inputs = g_ws_server->get_all_inputs();
 
-    if (!player_ids.empty())
+    // Persistent network controllers for players 2-4
+    static Controller s_net_controllers[network::MAX_PLAYERS];
+
+    // Get current sector to access players
+    auto* session = GameSession::current();
+    Sector* sector = (session && Sector::current()) ? Sector::current() : nullptr;
+
+    if (sector)
     {
-      auto it = all_inputs.find(player_ids[0]);
-      if (it != all_inputs.end() && it->second.connected)
+      auto players = sector->get_players();
+
+      // Spawn additional players for new phone connections
+      while (static_cast<int>(players.size()) < g_ws_server->get_player_count()
+             && static_cast<int>(players.size()) < network::MAX_PLAYERS)
       {
-        network::InputDispatcher::apply_to_controller(it->second, controller);
+        int new_id = static_cast<int>(players.size());
+        auto& player_status = players[0]->get_status();
+        player_status.add_player();
+        sector->add<Player>(player_status, "Tux" + std::to_string(new_id + 1), new_id);
+        sector->flush_game_objects();
+        players = sector->get_players();
+
+        // Assign network controller to the new player
+        if (new_id < network::MAX_PLAYERS)
+          players[new_id]->set_controller(&s_net_controllers[new_id]);
+      }
+
+      // Update network controllers and apply inputs
+      for (int i = 0; i < static_cast<int>(player_ids.size()) && i < static_cast<int>(players.size()); ++i)
+      {
+        auto it = all_inputs.find(player_ids[i]);
+        if (it != all_inputs.end() && it->second.connected)
+        {
+          if (i == 0)
+          {
+            // Player 1: apply to main controller
+            network::InputDispatcher::apply_to_controller(it->second, controller);
+          }
+          else if (i < network::MAX_PLAYERS)
+          {
+            // Additional players: update their network controller
+            s_net_controllers[i].update(); // shift current -> old for pressed/released detection
+            network::InputDispatcher::apply_to_controller(it->second, s_net_controllers[i]);
+          }
+        }
+      }
+    }
+    else
+    {
+      // No sector: just apply first phone to main controller
+      if (!player_ids.empty())
+      {
+        auto it = all_inputs.find(player_ids[0]);
+        if (it != all_inputs.end() && it->second.connected)
+          network::InputDispatcher::apply_to_controller(it->second, controller);
       }
     }
   }

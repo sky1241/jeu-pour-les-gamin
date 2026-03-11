@@ -1,39 +1,70 @@
-# SuperTux Mobile (fork pour les gamins)
+# SuperTux Multi (fork pour les gamins)
 
-Fork de [SuperTux](https://github.com/SuperTux/supertux) adapte pour Android avec des controles tactiles pour les enfants.
+Fork de [SuperTux](https://github.com/SuperTux/supertux) adapte pour le **multijoueur local** : chaque telephone = une manette, la TV = ecran partage.
 
-## Ce qui a change par rapport a SuperTux original
+## Architecture
 
-- **Croix directionnelle (D-pad)** en bas a gauche de l'ecran, toujours visible
-- **Bouton de saut** en bas a droite, gros et facile a toucher (appui court = petit saut, appui long = grand saut)
-- **Controles par inclinaison (tilt)** : pencher le telephone a gauche/droite pour deplacer Tux
-- **Bouton pause** en haut a gauche
-- **Ecran d'intro de niveau supprime** sur Android (on rentre direct dans le jeu)
-- **Bouton action supprime** (inutile pour les enfants)
-- Build Android avec **SDL 2.32.10**, **vcpkg arm64**, **NDK 29**
+```
+[Phone 1] --WiFi/WebSocket--> [PC/TV: SuperTux] <--WiFi/WebSocket-- [Phone 2]
+   App Flutter manette              Ecran partage split-screen
+```
 
-## Comment builder l'APK
+## Fonctionnalites
 
-Voir [PROMPT-POUR-CLAUDE-CODE.md](PROMPT-POUR-CLAUDE-CODE.md) pour les instructions de build detaillees.
+### Jeu (PC/TV)
+- **Split-screen dynamique** : 1 joueur = plein ecran, 2 = gauche/droite, 3 = 2 en haut + 1 en bas, 4 = 4 quadrants
+- **Serveur WebSocket** integre (port 9876) — les telephones se connectent automatiquement
+- **Decouverte UDP** (port 9877) — zero IP a taper, les telephones trouvent le serveur tout seuls
+- **Spawn dynamique** des joueurs quand un telephone se connecte
+- Credits et noms de devs retires des menus
 
-En resume :
-1. Installer Android SDK, NDK 29, vcpkg
-2. Configurer `mk/android/local.properties` avec les chemins SDK/NDK/vcpkg
-3. `cd mk/android && ./gradlew assembleDebug -Pci -Pcpuarch=arm64-v8a`
-4. `adb install app/build/outputs/apk/debug/app-debug.apk`
+### App Manette (telephone)
+- **Joystick** a gauche (thumb-follow, retour au centre)
+- **Bouton A** (saut, vert, 96dp) + **Bouton B** (action, orange, 80dp)
+- **Auto-discovery** : trouve le serveur sur le reseau WiFi automatiquement
+- **60 Hz** delta-encoded (envoie seulement quand l'input change)
+- **UX Infernal Wheel** : touch targets 48dp+, espacement 8dp, contraste WCAG
 
-## Fichiers modifies (par rapport a SuperTux upstream)
+### Mobile solo
+- **Smart View** : la gamine lance SuperTux sur le telephone, active Smart View, sa s'affiche sur la TV Samsung. Zero code en plus.
+- **Croix directionnelle (D-pad)** en bas a gauche, toujours visible
+- **Bouton de saut** en bas a droite
+- **Tilt desactive** par defaut
 
-| Fichier | Description |
-|---------|-------------|
-| `src/control/mobile_controller.cpp` | D-pad, saut, tilt, layout boutons |
-| `src/control/mobile_controller.hpp` | Declaration du controleur mobile |
-| `src/supertux/game_session.cpp` | Skip intro sur Android |
-| `src/supertux/screen_manager.cpp` | Fix switch case SDL_FINGERMOTION |
-| `src/supertux/gameconfig.hpp/cpp` | Config tilt (deadzone, sensitivity) |
-| `mk/cmake/SuperTux/Android.cmake` | vcpkg CACHE FORCE pour NDK |
-| `CMakeLists.txt` | Alias targets vcpkg static |
-| `mk/android/app/build.gradle` | NDK 29, cmake args |
+## Avancement
+
+| Brique | Description | Status |
+|--------|-------------|--------|
+| 1 | Protocole reseau (JSON/WebSocket) | OK |
+| 2 | Serveur WebSocket C++ (IXWebSocket) | OK |
+| 3 | Input Dispatcher (phone -> Controller) | OK |
+| 4 | App Flutter manette + UDP discovery | OK |
+| 5 | Multi-joueur (spawn + multi-controller) | OK |
+| 6 | Split-screen (1-4 joueurs) | OK |
+| 7 | Ghost renderer (40% opacite) | A faire |
+| 8 | Victory sync | A faire |
+| 9 | Lobby + discovery | A faire |
+| 10 | Polish (reconnexion, ping, vibration) | A faire |
+
+## Build Desktop (Windows)
+
+```batch
+call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake ^
+  -DVCPKG_TARGET_TRIPLET=x64-windows-nomodules ^
+  -DVCPKG_OVERLAY_PORTS=C:\Users\ludov\vcpkg-overlay
+cmake --build . --parallel
+```
+
+## Build App Manette (Flutter)
+
+```bash
+cd controller_app
+flutter pub get
+flutter build apk --release
+adb install build/app/outputs/apk/release/app-release.apk
+```
 
 ## Licence
 

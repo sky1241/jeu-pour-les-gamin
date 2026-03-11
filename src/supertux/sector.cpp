@@ -432,86 +432,127 @@ Sector::draw(DrawingContext& context)
 {
   BIND_SECTOR(*this);
 
-#if 0
-  context.push_transform();
+  auto players = get_players();
+  const int num_players = static_cast<int>(players.size());
+  const Rect original_clip = context.get_viewport();
 
-  Rect original_clip = context.get_viewport();
-  context.push_transform();
+  // Split-screen: compute viewport rectangles based on player count
+  // 1 player  = full screen
+  // 2 players = left | right
+  // 3 players = top-left | top-right | bottom full
+  // 4 players = 4 quadrants
+  if (num_players <= 1)
   {
+    // Single player: standard rendering
+    context.push_transform();
+
     Camera& camera = get_camera();
-    context.set_translation(camera.get_translation());
-    context.scale(camera.get_current_scale());
 
-    get_singleton_by_type<PlayerStatusHUD>().set_target_player(0);
-
-    Rect clip = original_clip;
-    clip.left = (clip.left + clip.right) / 2 + 16;
-    context.set_viewport(clip);
+    if (g_config->frame_prediction && m_last_dt > 0.f) {
+      float x = std::min(1.f, context.get_time_offset() / m_last_dt);
+      context.set_translation(camera.get_translation() * x + (1 - x) * m_last_translation);
+      context.scale(camera.get_current_scale() * x + (1 - x) * m_last_scale);
+    } else {
+      context.set_translation(camera.get_translation());
+      context.scale(camera.get_current_scale());
+    }
 
     GameObjectManager::draw(context);
 
     if (g_debug.show_collision_rects) {
       m_collision_system->draw(context);
     }
+
+    context.pop_transform();
   }
-  context.set_viewport(original_clip);
-  context.pop_transform();
-
-  context.push_transform();
+  else
   {
-    Camera& camera = get_camera();
-    context.set_translation(camera.get_translation());
-    context.scale(camera.get_current_scale());
+    // Multi-player split-screen
+    const int gap = 2; // pixel gap between viewports
+    const int mid_x = (original_clip.left + original_clip.right) / 2;
+    const int mid_y = (original_clip.top + original_clip.bottom) / 2;
 
-    get_singleton_by_type<PlayerStatusHUD>().set_target_player(1);
+    // Build viewport rects for each player
+    std::vector<Rect> viewports;
 
-    Rect clip = original_clip;
-    clip.right = (clip.left + clip.right) / 2 - 16;
-    context.set_viewport(clip);
+    if (num_players == 2)
+    {
+      // Left half | Right half
+      viewports.push_back(Rect(original_clip.left, original_clip.top,
+                                mid_x - gap, original_clip.bottom));
+      viewports.push_back(Rect(mid_x + gap, original_clip.top,
+                                original_clip.right, original_clip.bottom));
+    }
+    else if (num_players == 3)
+    {
+      // Top-left | Top-right | Bottom full width
+      viewports.push_back(Rect(original_clip.left, original_clip.top,
+                                mid_x - gap, mid_y - gap));
+      viewports.push_back(Rect(mid_x + gap, original_clip.top,
+                                original_clip.right, mid_y - gap));
+      viewports.push_back(Rect(original_clip.left, mid_y + gap,
+                                original_clip.right, original_clip.bottom));
+    }
+    else // 4 players
+    {
+      // 4 quadrants
+      viewports.push_back(Rect(original_clip.left, original_clip.top,
+                                mid_x - gap, mid_y - gap));
+      viewports.push_back(Rect(mid_x + gap, original_clip.top,
+                                original_clip.right, mid_y - gap));
+      viewports.push_back(Rect(original_clip.left, mid_y + gap,
+                                mid_x - gap, original_clip.bottom));
+      viewports.push_back(Rect(mid_x + gap, mid_y + gap,
+                                original_clip.right, original_clip.bottom));
+    }
 
-    GameObjectManager::draw(context);
+    // Render each player's viewport
+    for (int i = 0; i < num_players && i < static_cast<int>(viewports.size()); ++i)
+    {
+      context.push_transform();
+      context.set_viewport(viewports[i]);
 
-    if (g_debug.show_collision_rects) {
-      m_collision_system->draw(context);
+      // Center camera on this player
+      Player* player = players[i];
+      Vector player_pos = player->get_pos();
+      float vp_width = static_cast<float>(viewports[i].right - viewports[i].left);
+      float vp_height = static_cast<float>(viewports[i].bottom - viewports[i].top);
+
+      // Camera translation: player centered in viewport
+      Vector translation(player_pos.x - vp_width / 2.0f,
+                          player_pos.y - vp_height / 2.0f);
+
+      context.set_translation(translation);
+
+      GameObjectManager::draw(context);
+
+      if (g_debug.show_collision_rects) {
+        m_collision_system->draw(context);
+      }
+
+      context.set_viewport(original_clip);
+      context.pop_transform();
+    }
+
+    // Draw black divider lines
+    if (num_players >= 2)
+    {
+      // Vertical center line
+      context.color().draw_filled_rect(
+        Rectf(static_cast<float>(mid_x - gap), static_cast<float>(original_clip.top),
+              static_cast<float>(mid_x + gap), static_cast<float>(original_clip.bottom)),
+        Color::BLACK, 99999);
+    }
+    if (num_players >= 3)
+    {
+      // Horizontal center line (top half for 3 players, full for 4)
+      int h_line_right = (num_players == 3) ? original_clip.right : original_clip.right;
+      context.color().draw_filled_rect(
+        Rectf(static_cast<float>(original_clip.left), static_cast<float>(mid_y - gap),
+              static_cast<float>(h_line_right), static_cast<float>(mid_y + gap)),
+        Color::BLACK, 99999);
     }
   }
-  context.set_viewport(original_clip);
-  context.pop_transform();
-
-  context.pop_transform();
-
-  Rect midline = original_clip;
-  midline.right = (original_clip.left + original_clip.right) / 2 - 16;
-  midline.left = (original_clip.left + original_clip.right) / 2 + 16;
-  context.color().draw_filled_rect(midline, Color::BLACK, 99999);
-#else
-  context.push_transform();
-
-  Camera& camera = get_camera();
-
-  if (g_config->frame_prediction && m_last_dt > 0.f) {
-    // Interpolate between two camera settings; there are many possible ways to do this, but on
-    // short time scales all look about the same. This delays the camera position by one frame.
-    // (The proper thing to do, of course, would be not to interpolate, but instead to adjust
-    // the Camera class to extrapolate, and provide scale/translation at a given time; done
-    // right, this would make it possible to, for example, exactly sinusoidally shake the
-    // camera instead of piecewise linearly.)
-    float x = std::min(1.f, context.get_time_offset() / m_last_dt);
-    context.set_translation(camera.get_translation() * x + (1 - x) * m_last_translation);
-    context.scale(camera.get_current_scale() * x + (1 - x) * m_last_scale);
-  } else {
-    context.set_translation(camera.get_translation());
-    context.scale(camera.get_current_scale());
-  }
-
-  GameObjectManager::draw(context);
-
-  if (g_debug.show_collision_rects) {
-    m_collision_system->draw(context);
-  }
-
-  context.pop_transform();
-#endif
 
   if (m_level.m_is_in_cutscene && !m_level.m_skip_cutscene)
   {
