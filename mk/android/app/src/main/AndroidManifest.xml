@@ -34,6 +34,10 @@
 	<!-- Allow access to the vibrator -->
 	<uses-permission android:name="android.permission.VIBRATE"/>
 
+	<!-- WiFi for multiplayer and Smart View -->
+	<uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
 	<!-- if you want to capture audio, uncomment this. -->
 	<!-- <uses-permission android:name="android.permission.RECORD_AUDIO" /> -->
 
@@ -82,5 +86,10 @@
 			-->
 		</activity>
 	</application>
+
+	<!-- Allow querying controller app on Android 11+ -->
+	<queries>
+		<package android:name="com.sky1241.controller_app"/>
+	</queries>
 
 </manifest>

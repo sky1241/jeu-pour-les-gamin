@@ -30,6 +30,24 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat();
+    // Try localhost first (SuperTux on same device), then fallback to UDP discovery
+    _tryLocalhostThenDiscover();
+  }
+
+  Future<void> _tryLocalhostThenDiscover() async {
+    try {
+      final name = _nameController.text.trim().isEmpty ? 'Player' : _nameController.text.trim();
+      final client = WsClient(host: '127.0.0.1', port: 9876, playerName: name);
+      await client.connect().timeout(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => ControllerScreen(client: client)),
+      );
+      return;
+    } catch (_) {
+      // Localhost failed — SuperTux not on this device, try network discovery
+    }
+    if (!mounted) return;
     _startDiscovery();
   }
 
