@@ -29,7 +29,13 @@ public class MainActivity extends SDLActivity {
 
     private DisplayManager mDisplayManager;
     private boolean mCastConnected = false;
-    private boolean mControllerLaunched = false;
+
+    // Separated into two states so onResume() can retry after a failed background launch:
+    //   mControllerDirectlyLaunched = true  → startActivity() succeeded (controller is open)
+    //   mNotificationPosted         = true  → notification was posted but controller may not be open yet
+    private boolean mControllerDirectlyLaunched = false;
+    private boolean mNotificationPosted = false;
+
     private final Handler mHandler = new Handler(Looper.getMainLooper());
 
     // Listen for Miracast / WifiDisplay status changes (Samsung Smart View)
@@ -80,7 +86,8 @@ public class MainActivity extends SDLActivity {
             if (displayId != Display.DEFAULT_DISPLAY) {
                 Log.i(TAG, "External display removed: " + displayId);
                 mCastConnected = false;
-                mControllerLaunched = false; // Allow re-launch if TV reconnects
+                mControllerDirectlyLaunched = false;
+                mNotificationPosted = false;
                 // Cancel any pending controller notification
                 NotificationManager nm = getSystemService(NotificationManager.class);
                 if (nm != null) nm.cancel(NOTIF_ID);
@@ -122,7 +129,7 @@ public class MainActivity extends SDLActivity {
             registerReceiver(mWifiDisplayReceiver, filter);
         }
 
-        // Check if already connected
+        // Check if already connected at startup
         if (checkForExternalDisplay()) {
             Log.i(TAG, "External display already present at startup");
         } else {
@@ -133,6 +140,26 @@ public class MainActivity extends SDLActivity {
         }
 
         Log.i(TAG, "Display detection started. Displays: " + mDisplayManager.getDisplays().length);
+    }
+
+    /**
+     * KEY FIX: when SuperTux returns to foreground (user dismisses notification panel,
+     * closes Smart View, comes back from any other app), retry direct launch if:
+     *   - TV is connected (mCastConnected)
+     *   - Controller was NOT yet directly launched (mControllerDirectlyLaunched == false)
+     *
+     * Real-world flow:
+     *   user opens notification → Smart View → picks TV (SuperTux → background)
+     *   display connects → launchController() → startActivity() fails (background) → notification posted
+     *   user dismisses panel → SuperTux comes to FOREGROUND → onResume() → direct launch SUCCEEDS
+     */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mCastConnected && !mControllerDirectlyLaunched) {
+            Log.i(TAG, "onResume: TV connected but controller not yet launched — retrying direct launch");
+            mHandler.post(this::launchController);
+        }
     }
 
     private boolean checkForExternalDisplay() {
@@ -174,7 +201,7 @@ public class MainActivity extends SDLActivity {
     private void onExternalDisplayConnected() {
         if (mCastConnected) return;
         mCastConnected = true;
-        Log.i(TAG, "External display connected — showing controller notification");
+        Log.i(TAG, "External display connected — attempting controller launch");
         mHandler.removeCallbacks(mDisplayPoller);
         // Post immediately (no delay) so we're still considered foreground
         mHandler.post(this::launchController);
@@ -190,32 +217,48 @@ public class MainActivity extends SDLActivity {
     }
 
     private void launchController() {
-        if (mControllerLaunched) return;
+        // Already launched directly — nothing to do
+        if (mControllerDirectlyLaunched) return;
 
         Intent controllerIntent = getPackageManager()
             .getLaunchIntentForPackage("com.sky1241.controller_app");
 
         if (controllerIntent == null) {
             Log.w(TAG, "Controller app not installed (com.sky1241.controller_app)");
-            // Don't set mControllerLaunched — allow retry if app is installed later
+            // Don't set any flag — allow retry if app is installed later
             return;
         }
 
         controllerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-            | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
 
-        // Try direct launch first (works if we're in foreground)
+        // --- Attempt 1: direct startActivity() ---
+        // Works when SuperTux is in foreground (resumed state).
+        // Fails silently or throws on Android 10+ when in background.
         try {
             startActivity(controllerIntent);
-            mControllerLaunched = true;
+            mControllerDirectlyLaunched = true;
+            // If a notification was previously posted, cancel it — it's no longer needed
+            if (mNotificationPosted) {
+                NotificationManager nm = getSystemService(NotificationManager.class);
+                if (nm != null) nm.cancel(NOTIF_ID);
+                mNotificationPosted = false;
+            }
             Log.i(TAG, "Controller app launched directly");
             return;
         } catch (Exception e) {
             Log.w(TAG, "Direct launch failed (" + e.getMessage() + "), falling back to notification");
         }
 
-        // Fallback: post a high-priority notification so the user taps to open.
-        // This works from background and on Android 14+ where startActivity() is restricted.
+        // --- Attempt 2: high-priority notification ---
+        // Works from background and Android 14+ where startActivity() is restricted.
+        // NOTE: mControllerDirectlyLaunched stays false so onResume() will retry
+        //       the direct launch once SuperTux returns to foreground.
+        if (mNotificationPosted) {
+            Log.i(TAG, "Notification already posted — skipping duplicate");
+            return;
+        }
+
         ensureNotificationChannel();
 
         PendingIntent pi = PendingIntent.getActivity(
@@ -250,8 +293,9 @@ public class MainActivity extends SDLActivity {
         }
 
         nm.notify(NOTIF_ID, builder.build());
-        mControllerLaunched = true;
-        Log.i(TAG, "Controller notification posted");
+        mNotificationPosted = true;
+        // mControllerDirectlyLaunched stays false → onResume() will retry direct launch
+        Log.i(TAG, "Controller notification posted — will retry direct launch on next resume");
     }
 
     @Override
