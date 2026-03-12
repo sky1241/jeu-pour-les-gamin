@@ -1,0 +1,95 @@
+name: WebAssembly Build + GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config curl zip unzip tar rsync
+
+      - name: Install Emscripten
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install latest
+          ~/emsdk/emsdk activate latest
+
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+          ~/vcpkg/bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+
+      - name: Configure (emcmake)
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          mkdir -p build-wasm
+          emcmake cmake \
+            -B build-wasm \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWARNINGS=OFF \
+            -DENABLE_OPENGL=ON \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$HOME/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake \
+            -DVCPKG_TARGET_TRIPLET=wasm32-emscripten \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            .
+
+      - name: Sync data directory into build
+        run: |
+          rsync -a data/ build-wasm/data/
+
+      - name: Build
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cmake --build build-wasm -- -j$(nproc)
+
+      - name: Prepare Pages output
+        run: |
+          mkdir -p dist
+          cp build-wasm/supertux2.html dist/index.html
+          cp build-wasm/supertux2.wasm dist/
+          cp build-wasm/supertux2.js dist/
+          cp build-wasm/supertux2.data dist/ 2>/dev/null || true
+          # Cross-Origin headers required for SharedArrayBuffer / wasm threads
+          cat > dist/_headers << 'EOF'
+          /*
+            Cross-Origin-Opener-Policy: same-origin
+            Cross-Origin-Embedder-Policy: require-corp
+          EOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+  deploy:
+    needs: build-wasm
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
