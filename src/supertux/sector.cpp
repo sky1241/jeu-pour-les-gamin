@@ -516,13 +516,18 @@ Sector::draw(DrawingContext& context)
 
       // Center camera on this player
       Player* player = players[i];
-      Vector player_pos = player->get_pos();
+      // Use bbox center, NOT get_pos() (which returns the top-left corner).
+      // Using top-left shifts every player's view ~16px right and ~24px down.
+      Vector center = player->get_bbox().get_middle();
       float vp_width = static_cast<float>(viewports[i].right - viewports[i].left);
       float vp_height = static_cast<float>(viewports[i].bottom - viewports[i].top);
 
-      // Camera translation: player centered in viewport
-      Vector translation(player_pos.x - vp_width / 2.0f,
-                          player_pos.y - vp_height / 2.0f);
+      // Clamp to level bounds so we don't show void outside the level.
+      float tx = std::max(0.0f, std::min(center.x - vp_width  / 2.0f,
+                                          get_width()  - vp_width));
+      float ty = std::max(0.0f, std::min(center.y - vp_height / 2.0f,
+                                          get_height() - vp_height));
+      Vector translation(tx, ty);
 
       context.set_translation(translation);
 
