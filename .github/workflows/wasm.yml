@@ -46,12 +46,14 @@ jobs:
           emcmake cmake \
             -B build-wasm \
             -G Ninja \
+            -DCMAKE_MAKE_PROGRAM=$(which ninja) \
             -DCMAKE_BUILD_TYPE=Release \
             -DWARNINGS=OFF \
             -DENABLE_OPENGL=ON \
             -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
             -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$HOME/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake \
             -DVCPKG_TARGET_TRIPLET=wasm32-emscripten \
+            -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             .
 
