@@ -359,7 +359,8 @@ ScreenManager::update_gamelogic(float dt_sec)
       }
       int spawn_target = max_connected_slot + 1; // 0 when nobody connected
 
-      while (static_cast<int>(players.size()) < spawn_target
+      while (!players.empty() // players[0] required below — skip if sector not yet populated
+             && static_cast<int>(players.size()) < spawn_target
              && static_cast<int>(players.size()) < network::MAX_PLAYERS)
       {
         int new_id = static_cast<int>(players.size());
