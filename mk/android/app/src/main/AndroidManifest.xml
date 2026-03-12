@@ -17,20 +17,6 @@
 	<!-- External mouse input events -->
 	<uses-feature android:name="android.hardware.type.pc" android:required="false"/>
 
-	<!-- Audio recording support -->
-	<!-- if you want to capture audio, uncomment this. -->
-	<!-- <uses-feature
-		android:name="android.hardware.microphone"
-		android:required="false" /> -->
-
-	<!-- Allow downloading to the external storage on Android 5.1 and older -->
-	<!-- <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="22" /> -->
-
-	<!-- Allow access to Bluetooth devices -->
-	<!-- Currently this is just for Steam Controller support and requires setting SDL_HINT_JOYSTICK_HIDAPI_STEAM -->
-	<!-- <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" /> -->
-	<!-- <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" /> -->
-
 	<!-- Allow access to the vibrator -->
 	<uses-permission android:name="android.permission.VIBRATE"/>
 
@@ -40,56 +26,48 @@
 	<!-- Needed for UDP multicast/broadcast on some Samsung devices -->
 	<uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
 
-	<!-- if you want to capture audio, uncomment this. -->
-	<!-- <uses-permission android:name="android.permission.RECORD_AUDIO" /> -->
-
-	<!-- This is needed for libcurl to work -->
 	<uses-permission android:name="android.permission.INTERNET"/>
 
-	<!-- Notification for controller auto-launch (Android 13+) -->
+	<!-- Notification permission (Android 13+) — kept for fallback notification path -->
 	<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-	<!-- Create a Java class extending SDLActivity and place it in a
-		 directory under app/src/main/java matching the package, e.g. app/src/main/java/com/gamemaker/game/MyGame.java
-
-		 then replace "SDLActivity" with the name of your class (e.g. "MyGame")
-		 in the XML below.
-
-		 An example Java class can be found in README-android.md
-	-->
 	<application android:label="@string/app_name"
     android:allowBackup="true"
     android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
     android:hardwareAccelerated="true"
     android:icon="@mipmap/ic_launcher">
 
-		<!-- Example of setting SDL hints from AndroidManifest.xml:
-		<meta-data android:name="SDL_ENV.SDL_ACCELEROMETER_AS_JOYSTICK" android:value="0"/>
-		 -->
-
-		<activity android:name=".MainActivity"
-      android:alwaysRetainTaskState="true"
-      android:screenOrientation="landscape"
-      android:launchMode="singleInstance"
-      android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
-      android:exported="true">
+		<!-- ═══════════════════════════════════════════════════════════
+		     LAUNCHER: handles Smart View detection + TV/controller routing
+		     ═══════════════════════════════════════════════════════════ -->
+		<activity android:name=".LauncherActivity"
+          android:exported="true"
+          android:screenOrientation="landscape"
+          android:launchMode="singleTask"
+          android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation">
 			<intent-filter>
 				<action android:name="android.intent.action.MAIN"/>
 				<category android:name="android.intent.category.LAUNCHER"/>
 			</intent-filter>
-			<!-- Let Android know that we can handle some USB devices and should receive this event -->
+		</activity>
+
+		<!-- ═══════════════════════════════════════════════════════════
+		     GAME: SDL / SuperTux — launched on the TV external display
+		          (or directly on phone if no TV)
+		     ═══════════════════════════════════════════════════════════ -->
+		<activity android:name=".MainActivity"
+          android:exported="false"
+          android:alwaysRetainTaskState="true"
+          android:screenOrientation="landscape"
+          android:launchMode="singleTask"
+          android:resizeableActivity="true"
+          android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation">
+			<!-- USB game controller support -->
 			<intent-filter>
 				<action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>
 			</intent-filter>
-			<!-- Drop file event -->
-			<!--
-			<intent-filter>
-				<action android:name="android.intent.action.VIEW" />
-				<category android:name="android.intent.category.DEFAULT" />
-				<data android:mimeType="*/*" />
-			</intent-filter>
-			-->
 		</activity>
+
 	</application>
 
 	<!-- Allow querying controller app on Android 11+ -->
