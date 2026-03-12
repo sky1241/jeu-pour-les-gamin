@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.hardware.display.DisplayManager;
 import android.os.Build;
@@ -16,6 +17,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Parcelable;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.Display;
 
@@ -27,14 +29,21 @@ public class MainActivity extends SDLActivity {
     private static final String TAG = "SuperTuxMulti";
     public static Locale currLocale;
 
+    // SharedPreferences: remember that user has used TV so we skip the dialog next time
+    private static final String PREFS_NAME = "supertux_prefs";
+    private static final String PREF_TV_USED = "tv_connected_before";
+
     private DisplayManager mDisplayManager;
     private boolean mCastConnected = false;
 
-    // Separated into two states so onResume() can retry after a failed background launch:
+    // Two-state controller launch tracking:
     //   mControllerDirectlyLaunched = true  → startActivity() succeeded (controller is open)
-    //   mNotificationPosted         = true  → notification was posted but controller may not be open yet
+    //   mNotificationPosted         = true  → notification posted, controller may not be open yet
     private boolean mControllerDirectlyLaunched = false;
     private boolean mNotificationPosted = false;
+
+    // Tracked so we can auto-dismiss when TV connects
+    private AlertDialog mTVDialog;
 
     private final Handler mHandler = new Handler(Looper.getMainLooper());
 
@@ -43,7 +52,6 @@ public class MainActivity extends SDLActivity {
         @Override
         public void onReceive(Context context, Intent intent) {
             Log.i(TAG, "WifiDisplay broadcast: " + intent.getAction());
-            // Try to read WifiDisplayStatus via reflection (hidden API)
             try {
                 Parcelable status;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -67,7 +75,6 @@ public class MainActivity extends SDLActivity {
             } catch (Exception e) {
                 Log.w(TAG, "WifiDisplay status reflection failed: " + e.getMessage());
             }
-            // Fallback: check DisplayManager
             checkForExternalDisplay();
         }
     };
@@ -88,10 +95,8 @@ public class MainActivity extends SDLActivity {
                 mCastConnected = false;
                 mControllerDirectlyLaunched = false;
                 mNotificationPosted = false;
-                // Cancel any pending controller notification
                 NotificationManager nm = getSystemService(NotificationManager.class);
                 if (nm != null) nm.cancel(NOTIF_ID);
-                // Restart polling so we detect reconnection
                 mHandler.removeCallbacks(mDisplayPoller);
                 mHandler.postDelayed(mDisplayPoller, 2000);
             }
@@ -122,20 +127,25 @@ public class MainActivity extends SDLActivity {
         // Listen for Samsung Smart View / Miracast broadcasts
         IntentFilter filter = new IntentFilter();
         filter.addAction("android.hardware.display.action.WIFI_DISPLAY_STATUS_CHANGED");
-        // Register as not exported (Android 13+ requirement for dynamic receivers)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(mWifiDisplayReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
             registerReceiver(mWifiDisplayReceiver, filter);
         }
 
-        // Check if already connected at startup
         if (checkForExternalDisplay()) {
             Log.i(TAG, "External display already present at startup");
         } else {
-            // Show instructions dialog after 1s
-            mHandler.postDelayed(this::showTVDialog, 1000);
-            // Start polling as backup
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            boolean hadTvBefore = prefs.getBoolean(PREF_TV_USED, false);
+            if (hadTvBefore) {
+                // User has already paired with TV before — skip dialog, auto-open Smart View
+                Log.i(TAG, "TV used before — auto-opening Smart View in 1s");
+                mHandler.postDelayed(this::openSmartView, 1000);
+            } else {
+                // First time — show dialog with direct action button
+                mHandler.postDelayed(this::showTVDialog, 1000);
+            }
             mHandler.postDelayed(mDisplayPoller, 2000);
         }
 
@@ -143,15 +153,15 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * KEY FIX: when SuperTux returns to foreground (user dismisses notification panel,
-     * closes Smart View, comes back from any other app), retry direct launch if:
+     * KEY FIX (Bug K): when SuperTux returns to foreground (user dismisses Smart View panel,
+     * notification panel, or any other app), retry direct controller launch if:
      *   - TV is connected (mCastConnected)
      *   - Controller was NOT yet directly launched (mControllerDirectlyLaunched == false)
      *
      * Real-world flow:
-     *   user opens notification → Smart View → picks TV (SuperTux → background)
-     *   display connects → launchController() → startActivity() fails (background) → notification posted
-     *   user dismisses panel → SuperTux comes to FOREGROUND → onResume() → direct launch SUCCEEDS
+     *   openSmartView() → user picks TV → SuperTux goes background
+     *   display connects → launchController() → startActivity() fails (background) → notif posted
+     *   user dismisses panel → SuperTux FOREGROUND → onResume() → direct launch SUCCEEDS
      */
     @Override
     protected void onResume() {
@@ -160,6 +170,44 @@ public class MainActivity extends SDLActivity {
             Log.i(TAG, "onResume: TV connected but controller not yet launched — retrying direct launch");
             mHandler.post(this::launchController);
         }
+    }
+
+    /**
+     * Open Samsung Smart View / Android Cast directly from the app.
+     * Tries Samsung-specific intent first, then standard Android fallbacks.
+     */
+    private void openSmartView() {
+        if (isFinishing()) return;
+        String[] actions = {
+            "com.samsung.android.airview.ACTION_VIEW",  // Samsung Smart View (direct)
+            "android.settings.WIFI_DISPLAY_SETTINGS",   // Android Wifi Display settings
+            Settings.ACTION_CAST_SETTINGS               // Generic Android cast
+        };
+        for (String action : actions) {
+            try {
+                startActivity(new Intent(action));
+                Log.i(TAG, "Opened Smart View via: " + action);
+                return;
+            } catch (Exception ignored) {}
+        }
+        // Last resort
+        try {
+            startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS));
+            Log.i(TAG, "Opened wireless settings as final fallback");
+        } catch (Exception e) {
+            Log.w(TAG, "Could not open any Smart View / cast settings: " + e.getMessage());
+        }
+    }
+
+    private void showTVDialog() {
+        if (mCastConnected || isFinishing()) return;
+        mTVDialog = new AlertDialog.Builder(this)
+            .setTitle("Jouer sur la TV ?")
+            .setMessage("Appuie sur \"Ouvrir Smart View\", sélectionne ta TV.\n\nLe contrôleur se lancera automatiquement !")
+            .setPositiveButton("Ouvrir Smart View", (d, w) -> openSmartView())
+            .setNegativeButton("Plus tard", null)
+            .create();
+        mTVDialog.show();
     }
 
     private boolean checkForExternalDisplay() {
@@ -171,7 +219,6 @@ public class MainActivity extends SDLActivity {
                 return true;
             }
         }
-        // Also check presentation displays specifically
         Display[] presentations = mDisplayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
         for (Display d : presentations) {
             if (d.getDisplayId() != Display.DEFAULT_DISPLAY) {
@@ -201,23 +248,24 @@ public class MainActivity extends SDLActivity {
     private void onExternalDisplayConnected() {
         if (mCastConnected) return;
         mCastConnected = true;
+
+        // Remember for future launches — next time we auto-open Smart View without any dialog
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit().putBoolean(PREF_TV_USED, true).apply();
+
+        // Auto-dismiss the dialog if still on screen (user pressed "Ouvrir Smart View" → TV connected)
+        if (mTVDialog != null && mTVDialog.isShowing()) {
+            mTVDialog.dismiss();
+            mTVDialog = null;
+        }
+
         Log.i(TAG, "External display connected — attempting controller launch");
         mHandler.removeCallbacks(mDisplayPoller);
         // Post immediately (no delay) so we're still considered foreground
         mHandler.post(this::launchController);
     }
 
-    private void showTVDialog() {
-        if (mCastConnected || isFinishing()) return;
-        new AlertDialog.Builder(this)
-            .setTitle("Jouer sur la TV ?")
-            .setMessage("Active Smart View depuis le panneau de notifications, sélectionne ta TV.\n\nLe contrôleur se lancera automatiquement dès que la TV est connectée.")
-            .setPositiveButton("OK", null)
-            .show();
-    }
-
     private void launchController() {
-        // Already launched directly — nothing to do
         if (mControllerDirectlyLaunched) return;
 
         Intent controllerIntent = getPackageManager()
@@ -225,7 +273,6 @@ public class MainActivity extends SDLActivity {
 
         if (controllerIntent == null) {
             Log.w(TAG, "Controller app not installed (com.sky1241.controller_app)");
-            // Don't set any flag — allow retry if app is installed later
             return;
         }
 
@@ -233,12 +280,10 @@ public class MainActivity extends SDLActivity {
             | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
 
         // --- Attempt 1: direct startActivity() ---
-        // Works when SuperTux is in foreground (resumed state).
-        // Fails silently or throws on Android 10+ when in background.
+        // Works when SuperTux is in foreground. Fails on Android 10+ from background.
         try {
             startActivity(controllerIntent);
             mControllerDirectlyLaunched = true;
-            // If a notification was previously posted, cancel it — it's no longer needed
             if (mNotificationPosted) {
                 NotificationManager nm = getSystemService(NotificationManager.class);
                 if (nm != null) nm.cancel(NOTIF_ID);
@@ -251,9 +296,7 @@ public class MainActivity extends SDLActivity {
         }
 
         // --- Attempt 2: high-priority notification ---
-        // Works from background and Android 14+ where startActivity() is restricted.
-        // NOTE: mControllerDirectlyLaunched stays false so onResume() will retry
-        //       the direct launch once SuperTux returns to foreground.
+        // Works from background. mControllerDirectlyLaunched stays false → onResume() retries.
         if (mNotificationPosted) {
             Log.i(TAG, "Notification already posted — skipping duplicate");
             return;
@@ -282,25 +325,27 @@ public class MainActivity extends SDLActivity {
 
         NotificationManager nm = getSystemService(NotificationManager.class);
 
-        // Request notification permission on Android 13+ before posting
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(
                     new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1);
-                // Post anyway — if permission is denied the notification is silently dropped
             }
         }
 
         nm.notify(NOTIF_ID, builder.build());
         mNotificationPosted = true;
-        // mControllerDirectlyLaunched stays false → onResume() will retry direct launch
         Log.i(TAG, "Controller notification posted — will retry direct launch on next resume");
     }
 
     @Override
     protected void onDestroy() {
         mHandler.removeCallbacksAndMessages(null);
+        // Dismiss dialog to prevent window leak
+        if (mTVDialog != null && mTVDialog.isShowing()) {
+            mTVDialog.dismiss();
+            mTVDialog = null;
+        }
         if (mDisplayManager != null) {
             mDisplayManager.unregisterDisplayListener(mDisplayListener);
         }

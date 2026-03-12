@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'ws_client.dart';
 import 'discovery.dart';
 import 'controller_screen.dart';
@@ -30,8 +31,25 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat();
-    // Try localhost first (SuperTux on same device), then fallback to UDP discovery
+    // Load saved name first, then auto-connect
+    _init();
+  }
+
+  Future<void> _init() async {
+    // Restore player name from last session
+    final prefs = await SharedPreferences.getInstance();
+    final savedName = prefs.getString('player_name') ?? '';
+    if (savedName.isNotEmpty && mounted) {
+      setState(() => _nameController.text = savedName);
+    }
+    if (!mounted) return;
+    // Try localhost first (SuperTux on same device), then UDP discovery
     _tryLocalhostThenDiscover();
+  }
+
+  Future<void> _saveName(String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setString('player_name', name);
   }
 
   Future<void> _tryLocalhostThenDiscover() async {
@@ -39,6 +57,8 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
       final name = _nameController.text.trim().isEmpty ? 'Player' : _nameController.text.trim();
       final client = WsClient(host: '127.0.0.1', port: 9876, playerName: name);
       await client.connect().timeout(const Duration(seconds: 2));
+      if (!mounted) return;
+      await _saveName(name);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => ControllerScreen(client: client)),
@@ -61,7 +81,7 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
   }
 
   void _startDiscovery() {
-    _discovery?.stop(); // Stop previous socket before creating a new one (prevents socket leak)
+    _discovery?.stop();
     _discovery = Discovery(
       onFound: (server) {
         if (!mounted || _connecting) return;
@@ -77,8 +97,7 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
   }
 
   Future<void> _autoConnect(String ip, int port) async {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) return;
+    final name = _nameController.text.trim().isEmpty ? 'Player' : _nameController.text.trim();
 
     setState(() {
       _connecting = true;
@@ -89,6 +108,8 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
       final client = WsClient(host: ip, port: port, playerName: name);
       await client.connect().timeout(const Duration(seconds: 5));
 
+      if (!mounted) return;
+      await _saveName(name);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
