@@ -384,9 +384,19 @@ ScreenManager::update_gamelogic(float dt_sec)
 
         if (i == 0)
         {
-          // Player 1: apply to main controller only when connected
           if (is_connected)
+          {
             network::InputDispatcher::apply_to_controller(it->second, controller);
+          }
+          else
+          {
+            // P1 phone disconnected: zero out only the directional/action controls
+            // so Tux1 doesn't keep walking with the last input state.
+            // We use apply_to_controller with a zero input rather than controller.reset()
+            // to avoid clearing keyboard/pause/menu controls set by SDL events.
+            static const network::PlayerInput s_zero_input;
+            network::InputDispatcher::apply_to_controller(s_zero_input, controller);
+          }
         }
         else if (i < network::MAX_PLAYERS)
         {

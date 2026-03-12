@@ -11,17 +11,25 @@ class DiscoveredServer {
 
 class Discovery {
   RawDatagramSocket? _socket;
+  bool _stopped = false;
   final void Function(DiscoveredServer server)? onFound;
 
   Discovery({this.onFound});
 
   Future<void> startListening() async {
+    _stopped = false;
     // Bind to UDP port 9877 to receive discovery broadcasts
-    _socket = await RawDatagramSocket.bind(
+    final socket = await RawDatagramSocket.bind(
       InternetAddress.anyIPv4,
       9877,
       reuseAddress: true,
     );
+    // stop() may have been called while awaiting bind — close the orphaned socket
+    if (_stopped) {
+      socket.close();
+      return;
+    }
+    _socket = socket;
 
     _socket!.broadcastEnabled = true;
 
@@ -45,6 +53,7 @@ class Discovery {
   }
 
   void stop() {
+    _stopped = true;
     _socket?.close();
     _socket = null;
   }

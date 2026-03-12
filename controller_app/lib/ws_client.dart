@@ -111,9 +111,10 @@ class WsClient {
           color = self['color'] as String?;
         }
 
-        // Lobby state resets game-started flag (e.g. after victory → return to lobby)
+        // Keep gameStarted in sync with server status
         final status = msg['status'] as String?;
         if (status == 'lobby') gameStarted = false;
+        if (status == 'playing') gameStarted = true;
 
         onStateUpdate?.call(players);
 
