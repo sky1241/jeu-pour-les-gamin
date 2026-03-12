@@ -243,7 +243,7 @@ if(USE_SYSTEM_SDL2_TTF)
 endif()
 
 add_subdirectory(external/sexp-cpp EXCLUDE_FROM_ALL)
-if(NOT USE_SYSTEM_SDL2_TTF)
+if(NOT USE_SYSTEM_SDL2_TTF AND NOT EMSCRIPTEN)
   add_subdirectory(external/SDL_ttf EXCLUDE_FROM_ALL)
 endif()
 add_subdirectory(external/SDL_SavePNG EXCLUDE_FROM_ALL)
