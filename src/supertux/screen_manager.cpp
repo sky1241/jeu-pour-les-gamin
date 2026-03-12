@@ -364,7 +364,12 @@ ScreenManager::update_gamelogic(float dt_sec)
       {
         int new_id = static_cast<int>(players.size());
         auto& player_status = players[0]->get_status();
-        player_status.add_player();
+        // Guard matches GameSession::on_player_added: only call add_player() if the
+        // slot doesn't already exist in PlayerStatus. Without this guard, each level
+        // transition calls add_player() again, permanently incrementing m_num_players
+        // and corrupting bonus/pocket arrays in the savegame.
+        if (player_status.m_num_players <= new_id)
+          player_status.add_player();
         sector->add<Player>(player_status, "Tux" + std::to_string(new_id + 1), new_id);
         sector->flush_game_objects();
         players = sector->get_players();
