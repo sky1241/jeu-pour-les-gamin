@@ -20,7 +20,15 @@
 
 // the engine will be run with a logical framerate of 66.666fps, corresponding
 // to a 15 msec gap between steps. Warning: changing this may affect physics
+#ifdef __ANDROID__
+// On Android, cap at 30fps to match Miracast/Smart View encoding rate.
+// Real-time simulation speed is unchanged: 30 steps × dt=0.0333s = 1s simulated.
+// With 67fps, Miracast (30fps encoder) captures frames at irregular intervals
+// causing stuttering. At 30fps every frame is captured → smooth image on TV.
+static const float LOGICAL_FPS = 30.0f;
+#else
 static const float LOGICAL_FPS = 1000.0f / 15.0f;
+#endif
 
 // SHIFT_DELTA is used for sliding over 1-tile gaps and collision detection
 static const float SHIFT_DELTA = 7.0f;
