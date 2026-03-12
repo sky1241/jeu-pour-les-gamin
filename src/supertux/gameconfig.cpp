@@ -53,7 +53,11 @@ Config::Config() :
   use_fullscreen(false),
 #endif
   video(VideoSystem::VIDEO_SDL),
+#ifdef __ANDROID__
+  vsync(0),  // Miracast virtual display vsync is unreliable → game-loop SDL_Delay handles timing
+#else
   vsync(1),
+#endif
   frame_prediction(false),
   show_fps(false),
   show_player_pos(false),
