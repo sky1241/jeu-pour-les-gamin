@@ -52,6 +52,9 @@ public:
   /// Check if a "start" message was received (from player 1).
   bool consume_start_request();
 
+  /// Thread-safe: get the current game status string.
+  std::string get_game_status() const;
+
 private:
   void on_message(ix::WebSocket& ws, const std::string& msg);
   void on_close(ix::WebSocket& ws);
@@ -68,6 +71,8 @@ private:
 
   bool m_start_requested;
   bool m_running;
+  std::string m_game_level;    // current level path (empty = lobby)
+  std::string m_game_status;   // STATUS_LOBBY / STATUS_PLAYING / STATUS_VICTORY
 
   WsServer(const WsServer&) = delete;
   WsServer& operator=(const WsServer&) = delete;

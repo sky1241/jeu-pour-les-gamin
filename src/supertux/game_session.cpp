@@ -1024,9 +1024,11 @@ GameSession::start_sequence(Player* caller, Sequence seq, const SequenceData* da
   }
 
   // Broadcast victory to all connected phones.
-  if (g_ws_server && g_ws_server->get_player_count() > 0)
+  // No player_count guard — race condition: winning player may have just disconnected
+  if (g_ws_server)
   {
     std::string winner = caller ? ("Player " + std::to_string(caller->get_id() + 1)) : "Tux";
+    g_ws_server->broadcast_state("", network::STATUS_VICTORY); // update tracked status
     g_ws_server->broadcast_victory(winner);
   }
 

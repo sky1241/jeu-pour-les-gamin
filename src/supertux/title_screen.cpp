@@ -231,6 +231,10 @@ TitleScreen::update(float dt_sec, const Controller& controller)
 
   update_level(dt_sec);
 
+  // Reset game status to lobby when we're back on the title screen
+  if (g_ws_server && g_ws_server->get_game_status() != std::string(network::STATUS_LOBBY))
+    g_ws_server->broadcast_state("", network::STATUS_LOBBY);
+
   // Auto-start World 1 when a phone controller sends "start"
   if (g_ws_server && g_ws_server->consume_start_request())
   {
@@ -240,6 +244,7 @@ TitleScreen::update(float dt_sec, const Controller& controller)
       if (world && GameManager::current())
       {
         MenuManager::instance().clear_menu_stack();
+        g_ws_server->broadcast_state("world1", network::STATUS_PLAYING);
         GameManager::current()->start_worldmap(*world, "", "");
         return;
       }

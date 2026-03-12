@@ -23,7 +23,9 @@ WsServer::WsServer() :
   m_player_order(),
   m_ws_to_player(),
   m_start_requested(false),
-  m_running(false)
+  m_running(false),
+  m_game_level(""),
+  m_game_status(STATUS_LOBBY)
 {
 }
 
@@ -104,6 +106,10 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
 
       if (pid.empty())
         return;
+
+      // Cap name to 32 chars to prevent broadcast bloat
+      if (pname.size() > 32)
+        pname = pname.substr(0, 32);
 
       std::string state_str;
       {
@@ -188,8 +194,8 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
         // Build state JSON and collect clients — all while holding the lock
         json state_j;
         state_j["type"] = MSG_STATE;
-        state_j["level"] = "";
-        state_j["status"] = STATUS_LOBBY;
+        state_j["level"] = m_game_level;
+        state_j["status"] = m_game_status;
         json players_arr = json::array();
         for (const auto& order_pid : m_player_order)
         {
@@ -340,9 +346,21 @@ WsServer::consume_start_request()
   return val;
 }
 
+std::string
+WsServer::get_game_status() const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_game_status;
+}
+
 void
 WsServer::broadcast_state(const std::string& level, const std::string& status)
 {
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_game_level = level;
+    m_game_status = status;
+  }
   broadcast(make_state_json(level, status));
 }
 

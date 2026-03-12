@@ -319,10 +319,18 @@ ScreenManager::update_gamelogic(float dt_sec)
   }
 
   // Apply phone controller inputs to all players
-  if (g_ws_server && g_ws_server->get_player_count() > 0)
+  if (g_ws_server)
   {
     auto player_ids = g_ws_server->get_player_ids();
     auto all_inputs = g_ws_server->get_all_inputs();
+
+    // If all players have disconnected and the status is still "playing" (e.g. worldmap is
+    // shown but everyone left), reset to lobby so the next joiner gets a clean slate.
+    if (g_ws_server->get_player_count() == 0 &&
+        g_ws_server->get_game_status() != std::string(network::STATUS_LOBBY))
+    {
+      g_ws_server->broadcast_state("", network::STATUS_LOBBY);
+    }
 
     // Persistent network controllers for players 2-4
     static Controller s_net_controllers[network::MAX_PLAYERS];
@@ -331,12 +339,13 @@ ScreenManager::update_gamelogic(float dt_sec)
     auto* session = GameSession::current();
     Sector* sector = (session && Sector::current()) ? Sector::current() : nullptr;
 
-    if (sector)
+    if (sector && !player_ids.empty())
     {
       auto players = sector->get_players();
 
-      // Spawn additional players for new phone connections
-      while (static_cast<int>(players.size()) < g_ws_server->get_player_count()
+      // Spawn additional players for every slot that has ever been used (including
+      // currently-disconnected ones), so reconnecting players always have a Player object.
+      while (static_cast<int>(players.size()) < static_cast<int>(player_ids.size())
              && static_cast<int>(players.size()) < network::MAX_PLAYERS)
       {
         int new_id = static_cast<int>(players.size());
@@ -377,15 +386,12 @@ ScreenManager::update_gamelogic(float dt_sec)
         }
       }
     }
-    else
+    else if (!player_ids.empty())
     {
-      // No sector: just apply first phone to main controller
-      if (!player_ids.empty())
-      {
-        auto it = all_inputs.find(player_ids[0]);
-        if (it != all_inputs.end() && it->second.connected)
-          network::InputDispatcher::apply_to_controller(it->second, controller);
-      }
+      // No sector: just apply first connected phone to main controller
+      auto it = all_inputs.find(player_ids[0]);
+      if (it != all_inputs.end() && it->second.connected)
+        network::InputDispatcher::apply_to_controller(it->second, controller);
     }
   }
 

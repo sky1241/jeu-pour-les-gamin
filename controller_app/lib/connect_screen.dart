@@ -61,6 +61,7 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
   }
 
   void _startDiscovery() {
+    _discovery?.stop(); // Stop previous socket before creating a new one (prevents socket leak)
     _discovery = Discovery(
       onFound: (server) {
         if (!mounted || _connecting) return;
@@ -86,7 +87,7 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
 
     try {
       final client = WsClient(host: ip, port: port, playerName: name);
-      await client.connect();
+      await client.connect().timeout(const Duration(seconds: 5));
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(

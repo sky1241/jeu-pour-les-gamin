@@ -32,6 +32,13 @@ class _ControllerScreenState extends State<ControllerScreen> {
       HapticFeedback.heavyImpact();
       setState(() => _victoryWinner = winner);
     };
+    // Clear victory overlay when server returns to lobby state
+    widget.client.onStateUpdate = (players) {
+      if (!mounted) return;
+      if (_victoryWinner != null && !widget.client.gameStarted) {
+        setState(() => _victoryWinner = null);
+      }
+    };
   }
 
   @override
