@@ -9,8 +9,7 @@
     "glm",
     "libpng",
     "zlib",
-    "nlohmann-json",
-    "ixwebsocket"
+    "nlohmann-json"
   ],
   "features": {
     "nonwasm": {
@@ -20,7 +19,8 @@
         "sdl2-image",
         "curl",
         "openal-soft",
-        "libraqm"
+        "libraqm",
+        "ixwebsocket"
       ],
       "supports": "!emscripten"
     },

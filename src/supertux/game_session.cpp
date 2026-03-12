@@ -55,7 +55,9 @@
 #include "video/drawing_context.hpp"
 #include "video/surface.hpp"
 #include "worldmap/worldmap.hpp"
+#ifndef __EMSCRIPTEN__
 #include "network/ws_server.hpp"
+#endif
 #include "supertux/globals.hpp"
 
 static const float SAFE_TIME = 1.0f;
@@ -1025,12 +1027,14 @@ GameSession::start_sequence(Player* caller, Sequence seq, const SequenceData* da
 
   // Broadcast victory to all connected phones.
   // No player_count guard — race condition: winning player may have just disconnected
+#ifndef __EMSCRIPTEN__
   if (g_ws_server)
   {
     std::string winner = caller ? ("Player " + std::to_string(caller->get_id() + 1)) : "Tux";
     g_ws_server->broadcast_state("", network::STATUS_VICTORY); // update tracked status
     g_ws_server->broadcast_victory(winner);
   }
+#endif
 
   // Stop all clocks.
   for (LevelTime& lt : m_currentsector->get_objects_by_type<LevelTime>())

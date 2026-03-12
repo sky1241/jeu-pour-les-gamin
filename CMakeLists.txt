@@ -190,7 +190,10 @@ if(NOT USE_SYSTEM_SDL2_TTF)
 endif()
 
 ## Network: WebSocket server + JSON for multiplayer
-find_package(ixwebsocket CONFIG REQUIRED)
+## IXWebSocket runs as a server — not available in WebAssembly (browser has native WS API)
+if(NOT EMSCRIPTEN)
+  find_package(ixwebsocket CONFIG REQUIRED)
+endif()
 find_package(nlohmann_json CONFIG REQUIRED)
 
 if(NOT EMSCRIPTEN)
@@ -308,6 +311,13 @@ include(SuperTux/BuildMessagePot)
 set(SUPERTUX_SOURCES_C ${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB SUPERTUX_SOURCES_CXX RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/*/*.cpp src/supertux/menu/*.cpp src/video/sdl/*.cpp src/video/null/*.cpp)
+if(EMSCRIPTEN)
+  # WebSocket server and UDP discovery rely on IXWebSocket which is not available in wasm.
+  # The browser provides native WebSocket — input relay handled separately (Chunk 3).
+  list(FILTER SUPERTUX_SOURCES_CXX EXCLUDE REGEX "src/network/ws_server\\.cpp")
+  list(FILTER SUPERTUX_SOURCES_CXX EXCLUDE REGEX "src/network/udp_discovery\\.cpp")
+  list(FILTER SUPERTUX_SOURCES_CXX EXCLUDE REGEX "src/network/input_dispatcher\\.cpp")
+endif()
 file(GLOB SUPERTUX_SOURCES_HXX RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/*/*.hpp src/supertux/menu/*.hpp src/video/sdl/*.hpp src/video/null/*.hpp)
 file(GLOB SUPERTUX_RESOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${PROJECT_BINARY_DIR}/tmp/*.rc")
 
@@ -499,7 +509,10 @@ if(ANDROID)
 endif()
 
 ## Network: WebSocket + JSON for multiplayer
-target_link_libraries(supertux2 PUBLIC ixwebsocket::ixwebsocket nlohmann_json::nlohmann_json)
+target_link_libraries(supertux2 PUBLIC nlohmann_json::nlohmann_json)
+if(NOT EMSCRIPTEN)
+  target_link_libraries(supertux2 PUBLIC ixwebsocket::ixwebsocket)
+endif()
 if(WIN32)
   target_link_libraries(supertux2 PUBLIC bcrypt ws2_32)
 endif()

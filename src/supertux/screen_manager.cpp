@@ -45,8 +45,10 @@
 #include "video/compositor.hpp"
 #include "video/drawing_context.hpp"
 #include "worldmap/worldmap.hpp"
+#ifndef __EMSCRIPTEN__
 #include "network/input_dispatcher.hpp"
 #include "network/ws_server.hpp"
+#endif
 
 #include <stdio.h>
 #include <chrono>
@@ -319,6 +321,7 @@ ScreenManager::update_gamelogic(float dt_sec)
   }
 
   // Apply phone controller inputs to all players
+#ifndef __EMSCRIPTEN__
   if (g_ws_server)
   {
     // Persistent network controllers (static: survives across frames)
@@ -423,6 +426,7 @@ ScreenManager::update_gamelogic(float dt_sec)
         network::InputDispatcher::apply_to_controller(it->second, controller);
     }
   }
+#endif
 
   SquirrelVirtualMachine::current()->update(g_game_time);
 

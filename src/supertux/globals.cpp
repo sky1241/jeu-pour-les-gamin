@@ -17,7 +17,9 @@
 #include "supertux/globals.hpp"
 
 Config* g_config;
+#ifndef __EMSCRIPTEN__
 network::WsServer* g_ws_server = nullptr;
+#endif
 
 float g_game_time = 0;
 float g_real_time = 0;

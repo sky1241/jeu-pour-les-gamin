@@ -47,8 +47,10 @@ extern "C" {
 #include "gui/menu_manager.hpp"
 #include "gui/notification.hpp"
 #include "math/random.hpp"
+#ifndef __EMSCRIPTEN__
 #include "network/udp_discovery.hpp"
 #include "network/ws_server.hpp"
+#endif
 #include "object/player.hpp"
 #include "object/spawnpoint.hpp"
 #include "physfs/physfs_file_system.hpp"
@@ -731,6 +733,7 @@ Main::launch_game(const CommandLineArguments& args)
     }
   }
 
+#ifndef __EMSCRIPTEN__
   // Start WebSocket server for phone controllers
   network::WsServer ws_server;
   g_ws_server = &ws_server;
@@ -749,12 +752,15 @@ Main::launch_game(const CommandLineArguments& args)
   {
     udp_discovery.start();
   }
+#endif
 
   m_screen_manager->run();
 
+#ifndef __EMSCRIPTEN__
   udp_discovery.stop();
   ws_server.stop();
   g_ws_server = nullptr;
+#endif
 }
 
 int
