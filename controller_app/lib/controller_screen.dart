@@ -19,13 +19,16 @@ class _ControllerScreenState extends State<ControllerScreen> {
   bool _btnA = false;
   bool _btnB = false;
   String? _victoryWinner;
+  bool _reconnecting = false;
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 12; // ~24s before giving up
 
   @override
   void initState() {
     super.initState();
     widget.client.onDisconnect = () {
       if (!mounted) return;
-      Navigator.of(context).pop();
+      _tryReconnect();
     };
     widget.client.onVictory = (winner) {
       if (!mounted) return;
@@ -39,6 +42,30 @@ class _ControllerScreenState extends State<ControllerScreen> {
         setState(() => _victoryWinner = null);
       }
     };
+  }
+
+  Future<void> _tryReconnect() async {
+    if (!mounted) return;
+    setState(() {
+      _reconnecting = true;
+      _reconnectAttempts = 0;
+    });
+    while (_reconnectAttempts < _maxReconnectAttempts) {
+      _reconnectAttempts++;
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      try {
+        await widget.client.connect().timeout(const Duration(seconds: 5));
+        if (!mounted) return;
+        setState(() {
+          _reconnecting = false;
+          _reconnectAttempts = 0;
+        });
+        return;
+      } catch (_) {}
+    }
+    // Exhausted retries — fall back to connect screen
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -85,24 +112,21 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
     return Scaffold(
       body: SafeArea(
-        // UX: Content inside safe areas (Infernal Wheel rule)
         child: Padding(
-          // UX: 16dp lateral margins (Material Design 3 / Apple HIG compact)
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Stack(
             children: [
               // Connection indicator — top center
               Positioned(
-                top: 8, // 8dp spacing token
+                top: 8,
                 left: 0,
                 right: 0,
                 child: Center(
                   child: Container(
-                    // UX: 48dp min touch target height
                     constraints: const BoxConstraints(minHeight: 48),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16, // 16dp horizontal padding
-                      vertical: 8,    // 8dp vertical padding
+                      horizontal: 16,
+                      vertical: 8,
                     ),
                     decoration: BoxDecoration(
                       color: accent.withAlpha(50),
@@ -113,8 +137,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
                     child: Text(
                       widget.client.playerName,
                       style: TextStyle(
-                        color: Colors.white, // UX: high contrast on dark bg
-                        fontSize: 16, // UX: Body text >= 16sp
+                        color: Colors.white,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -124,7 +148,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
               // Joystick on the left
               Positioned(
-                left: 16, // 16dp from edge
+                left: 16,
                 top: 0,
                 bottom: 0,
                 child: Center(
@@ -135,24 +159,22 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 ),
               ),
 
-              // Buttons on the right — 24dp spacing between buttons
+              // Buttons on the right
               Positioned(
-                right: 24, // 24dp from edge
+                right: 24,
                 top: 0,
                 bottom: 0,
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // B button (action) on top — 80dp (>= 48dp touch target)
                       ActionButton(
                         label: 'B',
                         color: Colors.orange,
                         size: 80,
                         onChanged: _onBtnBChanged,
                       ),
-                      const SizedBox(height: 24), // 24dp spacing token
-                      // A button (jump) on bottom — 96dp (primary action, larger)
+                      const SizedBox(height: 24),
                       ActionButton(
                         label: 'A',
                         color: Colors.green,
@@ -163,6 +185,27 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   ),
                 ),
               ),
+
+              // Reconnecting overlay
+              if (_reconnecting)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black54,
+                    alignment: Alignment.center,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(color: Colors.white),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Reconnecting...',
+                          style: TextStyle(color: Colors.white, fontSize: 20),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
               // Victory overlay
               if (_victoryWinner != null)
                 Positioned.fill(

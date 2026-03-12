@@ -56,6 +56,9 @@ class WsClient {
   }) : playerId = _generatePlayerId();
 
   Future<void> connect() async {
+    // Cancel any previous timer before reconnecting
+    _sendTimer?.cancel();
+    _sendTimer = null;
     // Reset state so reconnect always sends a full first frame
     _lastStickX = -999;
     _lastStickY = -999;

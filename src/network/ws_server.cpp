@@ -107,6 +107,10 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
       if (pid.empty())
         return;
 
+      // Cap player_id to 64 chars (UUID is 36 — generous safety cap)
+      if (pid.size() > 64)
+        pid = pid.substr(0, 64);
+
       // Cap name to 32 chars to prevent broadcast bloat
       if (pname.size() > 32)
         pname = pname.substr(0, 32);
@@ -277,9 +281,9 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
       }
     }
   }
-  catch (const json::parse_error& e)
+  catch (const std::exception& e)
   {
-    log_warning << "[WS] Invalid JSON: " << e.what() << std::endl;
+    log_warning << "[WS] Message error: " << e.what() << std::endl;
   }
 }
 

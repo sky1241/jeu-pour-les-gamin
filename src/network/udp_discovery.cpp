@@ -160,7 +160,14 @@ UdpDiscovery::get_local_ip() const
   if (getifaddrs(&addrs) != 0)
     return "127.0.0.1";
 
-  std::string result = "127.0.0.1";
+  // Two-pass selection:
+  //   Pass 1: prefer wlan* / eth* (the real WiFi/Ethernet interface)
+  //   Pass 2: fallback to any non-loopback, non-p2p interface
+  // This prevents Smart View / Wi-Fi Direct (p2p0, 192.168.49.x) from being
+  // selected instead of the actual WiFi address (wlan0).
+  std::string preferred  = "127.0.0.1";  // wlan/eth
+  std::string fallback   = "127.0.0.1";  // any other non-loopback
+
   for (struct ifaddrs* ifa = addrs; ifa != nullptr; ifa = ifa->ifa_next)
   {
     if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET)
@@ -169,17 +176,32 @@ UdpDiscovery::get_local_ip() const
     auto* sa = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
     char buf[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &sa->sin_addr, buf, sizeof(buf));
-
     std::string ip(buf);
-    if (ip != "127.0.0.1")
+
+    if (ip == "127.0.0.1")
+      continue;
+
+    std::string iface(ifa->ifa_name);
+
+    // Skip Wi-Fi Direct / Miracast / dummy interfaces
+    if (iface.substr(0, 3) == "p2p" ||
+        iface.substr(0, 5) == "dummy" ||
+        iface.substr(0, 2) == "lo")
+      continue;
+
+    if (preferred == "127.0.0.1" &&
+        (iface.substr(0, 4) == "wlan" || iface.substr(0, 3) == "eth"))
     {
-      result = ip;
-      break;
+      preferred = ip;
+    }
+    else if (fallback == "127.0.0.1")
+    {
+      fallback = ip;
     }
   }
 
   freeifaddrs(addrs);
-  return result;
+  return (preferred != "127.0.0.1") ? preferred : fallback;
 #endif
 }
 
