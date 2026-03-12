@@ -1,10 +1,15 @@
 package org.supertux.supertux2;
 
 import android.app.AlertDialog;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.hardware.display.DisplayManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -76,6 +81,9 @@ public class MainActivity extends SDLActivity {
                 Log.i(TAG, "External display removed: " + displayId);
                 mCastConnected = false;
                 mControllerLaunched = false; // Allow re-launch if TV reconnects
+                // Cancel any pending controller notification
+                NotificationManager nm = getSystemService(NotificationManager.class);
+                if (nm != null) nm.cancel(NOTIF_ID);
                 // Restart polling so we detect reconnection
                 mHandler.removeCallbacks(mDisplayPoller);
                 mHandler.postDelayed(mDisplayPoller, 2000);
@@ -148,12 +156,28 @@ public class MainActivity extends SDLActivity {
         return false;
     }
 
+    private static final String NOTIF_CHANNEL_ID = "supertux_controller";
+    private static final int NOTIF_ID = 1;
+
+    private void ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel(
+                NOTIF_CHANNEL_ID,
+                "SuperTux Contrôleur",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            ch.setDescription("Appuie pour ouvrir le contrôleur quand la TV est connectée");
+            getSystemService(NotificationManager.class).createNotificationChannel(ch);
+        }
+    }
+
     private void onExternalDisplayConnected() {
         if (mCastConnected) return;
         mCastConnected = true;
-        Log.i(TAG, "External display connected — launching controller in 2s");
+        Log.i(TAG, "External display connected — showing controller notification");
         mHandler.removeCallbacks(mDisplayPoller);
-        mHandler.postDelayed(this::launchController, 2000);
+        // Post immediately (no delay) so we're still considered foreground
+        mHandler.post(this::launchController);
     }
 
     private void showTVDialog() {
@@ -167,24 +191,67 @@ public class MainActivity extends SDLActivity {
 
     private void launchController() {
         if (mControllerLaunched) return;
-        mControllerLaunched = true;
 
-        try {
-            Intent controllerIntent = getPackageManager()
-                .getLaunchIntentForPackage("com.sky1241.controller_app");
+        Intent controllerIntent = getPackageManager()
+            .getLaunchIntentForPackage("com.sky1241.controller_app");
 
-            if (controllerIntent != null) {
-                controllerIntent.putExtra("auto_connect_host", "127.0.0.1");
-                controllerIntent.putExtra("auto_connect_port", 9876);
-                controllerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                Log.i(TAG, "Launching controller app...");
-                startActivity(controllerIntent);
-            } else {
-                Log.w(TAG, "Controller app not installed (com.sky1241.controller_app)");
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to launch controller: " + e.getMessage());
+        if (controllerIntent == null) {
+            Log.w(TAG, "Controller app not installed (com.sky1241.controller_app)");
+            // Don't set mControllerLaunched — allow retry if app is installed later
+            return;
         }
+
+        controllerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+            | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+
+        // Try direct launch first (works if we're in foreground)
+        try {
+            startActivity(controllerIntent);
+            mControllerLaunched = true;
+            Log.i(TAG, "Controller app launched directly");
+            return;
+        } catch (Exception e) {
+            Log.w(TAG, "Direct launch failed (" + e.getMessage() + "), falling back to notification");
+        }
+
+        // Fallback: post a high-priority notification so the user taps to open.
+        // This works from background and on Android 14+ where startActivity() is restricted.
+        ensureNotificationChannel();
+
+        PendingIntent pi = PendingIntent.getActivity(
+            this, 0, controllerIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        Notification.Builder builder;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder = new Notification.Builder(this, NOTIF_CHANNEL_ID);
+        } else {
+            builder = new Notification.Builder(this);
+        }
+
+        builder.setSmallIcon(android.R.drawable.ic_media_play)
+               .setContentTitle("SuperTux — TV connectée !")
+               .setContentText("Appuie ici pour ouvrir le contrôleur")
+               .setContentIntent(pi)
+               .setAutoCancel(true)
+               .setPriority(Notification.PRIORITY_HIGH);
+
+        NotificationManager nm = getSystemService(NotificationManager.class);
+
+        // Request notification permission on Android 13+ before posting
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                    new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1);
+                // Post anyway — if permission is denied the notification is silently dropped
+            }
+        }
+
+        nm.notify(NOTIF_ID, builder.build());
+        mControllerLaunched = true;
+        Log.i(TAG, "Controller notification posted");
     }
 
     @Override
