@@ -55,6 +55,10 @@ public:
   /// Thread-safe: get the current game status string.
   std::string get_game_status() const;
 
+  /// Thread-safe: remove all disconnected player slots (compact player_order).
+  /// Called when returning to lobby so stale UUIDs don't inflate slot indices.
+  void clear_disconnected();
+
 private:
   void on_message(ix::WebSocket& ws, const std::string& msg);
   void on_close(ix::WebSocket& ws);

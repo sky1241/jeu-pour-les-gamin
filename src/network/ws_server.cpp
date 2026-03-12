@@ -354,6 +354,27 @@ WsServer::get_game_status() const
 }
 
 void
+WsServer::clear_disconnected()
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto it = m_player_order.begin();
+  while (it != m_player_order.end())
+  {
+    auto inp_it = m_inputs.find(*it);
+    if (inp_it == m_inputs.end() || !inp_it->second.connected)
+    {
+      if (inp_it != m_inputs.end())
+        m_inputs.erase(inp_it);
+      it = m_player_order.erase(it);
+    }
+    else
+    {
+      ++it;
+    }
+  }
+}
+
+void
 WsServer::broadcast_state(const std::string& level, const std::string& status)
 {
   {

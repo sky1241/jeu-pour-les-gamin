@@ -321,19 +321,23 @@ ScreenManager::update_gamelogic(float dt_sec)
   // Apply phone controller inputs to all players
   if (g_ws_server)
   {
+    // Persistent network controllers (static: survives across frames)
+    static Controller s_net_controllers[network::MAX_PLAYERS];
+
     auto player_ids = g_ws_server->get_player_ids();
     auto all_inputs = g_ws_server->get_all_inputs();
 
-    // If all players have disconnected and the status is still "playing" (e.g. worldmap is
-    // shown but everyone left), reset to lobby so the next joiner gets a clean slate.
+    // When all players have disconnected and the game is not in lobby state:
+    // reset status to lobby, purge stale UUID slots, and clear net controllers.
+    // This prevents stale high-index slots from spawning phantom Tuxes next game.
     if (g_ws_server->get_player_count() == 0 &&
         g_ws_server->get_game_status() != std::string(network::STATUS_LOBBY))
     {
       g_ws_server->broadcast_state("", network::STATUS_LOBBY);
+      g_ws_server->clear_disconnected();
+      for (auto& c : s_net_controllers) c.reset();
+      player_ids.clear(); // local snapshot is now stale
     }
-
-    // Persistent network controllers for players 2-4
-    static Controller s_net_controllers[network::MAX_PLAYERS];
 
     // Get current sector to access players
     auto* session = GameSession::current();
@@ -343,9 +347,19 @@ ScreenManager::update_gamelogic(float dt_sec)
     {
       auto players = sector->get_players();
 
-      // Spawn additional players for every slot that has ever been used (including
-      // currently-disconnected ones), so reconnecting players always have a Player object.
-      while (static_cast<int>(players.size()) < static_cast<int>(player_ids.size())
+      // Compute highest slot index occupied by a *connected* player.
+      // We must have a Player object for every index up to and including it
+      // (so gaps left by disconnected slots at lower indices get filled too).
+      int max_connected_slot = -1;
+      for (int i = 0; i < static_cast<int>(player_ids.size()); ++i)
+      {
+        auto it = all_inputs.find(player_ids[i]);
+        if (it != all_inputs.end() && it->second.connected)
+          max_connected_slot = i;
+      }
+      int spawn_target = max_connected_slot + 1; // 0 when nobody connected
+
+      while (static_cast<int>(players.size()) < spawn_target
              && static_cast<int>(players.size()) < network::MAX_PLAYERS)
       {
         int new_id = static_cast<int>(players.size());
@@ -355,7 +369,6 @@ ScreenManager::update_gamelogic(float dt_sec)
         sector->flush_game_objects();
         players = sector->get_players();
 
-        // Assign network controller to the new player (reset first to clear stale state)
         if (new_id < network::MAX_PLAYERS)
         {
           s_net_controllers[new_id].reset();
@@ -388,7 +401,7 @@ ScreenManager::update_gamelogic(float dt_sec)
     }
     else if (!player_ids.empty())
     {
-      // No sector: just apply first connected phone to main controller
+      // No sector (worldmap/title): apply first connected phone to main controller
       auto it = all_inputs.find(player_ids[0]);
       if (it != all_inputs.end() && it->second.connected)
         network::InputDispatcher::apply_to_controller(it->second, controller);
