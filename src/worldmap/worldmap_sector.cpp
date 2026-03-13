@@ -49,7 +49,9 @@
 #include "worldmap/special_tile.hpp"
 #include "worldmap/teleporter.hpp"
 #include "worldmap/worldmap.hpp"
+#ifndef __EMSCRIPTEN__
 #include "network/ws_server.hpp"
+#endif
 #include "supertux/globals.hpp"
 
 namespace worldmap {
@@ -372,8 +374,10 @@ WorldMapSector::update(float dt_sec)
           m_parent.save_state();
 
           // Tell phones a level is starting so their controllers are active
+#ifndef __EMSCRIPTEN__
           if (g_ws_server)
             g_ws_server->broadcast_state(levelfile, network::STATUS_PLAYING);
+#endif
 
           ScreenManager::current()->push_screen(std::move(game_session),
                                                 skip_cutscene ? nullptr : std::make_unique<ShrinkFade>(shrinkpos, .9f, LAYER_LIGHTMAP - 1, ShrinkFade::FADEOUT, false, .2f));

@@ -44,7 +44,9 @@
 #include "worldmap/worldmap_sector.hpp"
 #include "worldmap/worldmap_sector_parser.hpp"
 #include "worldmap/worldmap_state.hpp"
+#ifndef __EMSCRIPTEN__
 #include "network/ws_server.hpp"
+#endif
 #include "supertux/globals.hpp"
 
 namespace worldmap {
@@ -133,8 +135,10 @@ WorldMap::setup()
 
   // When returning to the worldmap from a level (could be after victory),
   // tell all phones to clear the victory overlay and show the controller.
+#ifndef __EMSCRIPTEN__
   if (g_ws_server && g_ws_server->get_game_status() != std::string(network::STATUS_LOBBY))
     g_ws_server->broadcast_state("", network::STATUS_LOBBY);
+#endif
 
   load_state();
   m_sector->setup();

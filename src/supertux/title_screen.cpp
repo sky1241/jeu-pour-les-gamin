@@ -38,7 +38,9 @@
 #include "supertux/savegame.hpp"
 #include "supertux/screen_manager.hpp"
 #include "supertux/sector.hpp"
+#ifndef __EMSCRIPTEN__
 #include "network/ws_server.hpp"
+#endif
 #include "supertux/game_manager.hpp"
 #include "supertux/world.hpp"
 #include "video/compositor.hpp"
@@ -232,6 +234,7 @@ TitleScreen::update(float dt_sec, const Controller& controller)
   update_level(dt_sec);
 
   // Reset game status to lobby when we're back on the title screen
+#ifndef __EMSCRIPTEN__
   if (g_ws_server && g_ws_server->get_game_status() != std::string(network::STATUS_LOBBY))
     g_ws_server->broadcast_state("", network::STATUS_LOBBY);
 
@@ -254,6 +257,7 @@ TitleScreen::update(float dt_sec, const Controller& controller)
       log_warning << "[WS] Failed to start world1 from controller: " << e.what() << std::endl;
     }
   }
+#endif
 
   // Re-open main menu, if it was closed
   if (!MenuManager::instance().is_active() && !ScreenManager::current()->has_pending_fadeout())
