@@ -62,7 +62,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
           _reconnectAttempts = 0;
         });
         return;
-      } catch (_) {}
+      } catch (_) {
+        if (!mounted) return; // widget disposed during failed attempt — stop loop
+      }
     }
     // Exhausted retries — fall back to connect screen
     if (mounted) Navigator.of(context).pop();
