@@ -106,14 +106,14 @@ void wasm_dispatch_input_c(const char* pid, float sx, float sy, int btn_a, int b
   if (inp.player_id.empty()) {
     inp.player_id  = pid;
     inp.connected  = true;
-    // Assign color from slot index (order determined by first input received)
-    if (std::find(s_player_order.begin(), s_player_order.end(), std::string(pid))
-        == s_player_order.end()) {
+    // Assign color from slot index (order determined by first input received).
+    // Single find: push if absent, then use the resulting position.
+    auto pos = std::find(s_player_order.begin(), s_player_order.end(), std::string(pid));
+    if (pos == s_player_order.end()) {
       s_player_order.push_back(pid);
+      pos = s_player_order.end() - 1;
     }
-    int idx       = static_cast<int>(
-      std::find(s_player_order.begin(), s_player_order.end(), std::string(pid))
-      - s_player_order.begin());
+    int idx = static_cast<int>(pos - s_player_order.begin());
     inp.color = PLAYER_COLORS[idx % MAX_PLAYERS];
   }
   inp.stick_x = sx;

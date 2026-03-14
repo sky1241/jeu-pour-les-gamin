@@ -103,14 +103,42 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
     {
       // TV browser (wasm) registers as a passive listener.
       // It receives relayed inputs + state updates but is NOT a player.
+      //
+      // NOTE: m_tv_clients tracks membership only (for on_close cleanup).
+      // Relay is done via broadcast() which uses the server's shared_ptr list
+      // internally — this avoids any raw-pointer use-after-free risk.
       std::string state_str;
+      int tv_count = 0;
       {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_tv_clients.insert(&ws);
-        state_str = make_state_json(m_game_level, m_game_status);
-      }
-      ws.send(state_str); // send current state so TV knows who's connected
-      log_info << "[WS] TV client connected (" << m_tv_clients.size() << " total)" << std::endl;
+        tv_count = static_cast<int>(m_tv_clients.size());
+
+        // Build state JSON inline — do NOT call make_state_json() here
+        // because that function also acquires m_mutex, causing a deadlock.
+        json sj;
+        sj["type"]   = MSG_STATE;
+        sj["level"]  = m_game_level;
+        sj["status"] = m_game_status;
+        json parr = json::array();
+        for (const auto& pid : m_player_order)
+        {
+          auto it = m_inputs.find(pid);
+          if (it != m_inputs.end() && it->second.connected)
+          {
+            json p;
+            p["player_id"]   = it->second.player_id;
+            p["player_name"] = it->second.player_name;
+            p["color"]       = it->second.color;
+            parr.push_back(p);
+          }
+        }
+        sj["players"] = parr;
+        state_str = sj.dump();
+      } // release mutex before sending
+
+      ws.send(state_str);
+      log_info << "[WS] TV client connected (" << tv_count << " total)" << std::endl;
     }
     else if (type == MSG_JOIN)
     {
@@ -241,7 +269,7 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
     {
       std::string pid = j.value("player_id", "");
 
-      std::vector<ix::WebSocket*> tv_snapshot;
+      bool has_tv_clients = false;
       {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_inputs.find(pid);
@@ -252,12 +280,13 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
           it->second.btn_a   = j.value("btn_a", false);
           it->second.btn_b   = j.value("btn_b", false);
         }
-        // Collect TV clients while holding mutex
-        tv_snapshot.assign(m_tv_clients.begin(), m_tv_clients.end());
+        has_tv_clients = !m_tv_clients.empty();
       }
-      // Relay raw input JSON to all TV wasm clients (outside lock)
-      for (auto* tv : tv_snapshot)
-        tv->send(msg);
+      // Relay raw input JSON to all connected clients (phones will ignore it;
+      // TV wasm browsers need it).  Uses getClients() shared_ptrs — no raw
+      // pointer dereference, so lifetime is safe even under concurrent close.
+      if (has_tv_clients)
+        broadcast(msg);
     }
     else if (type == MSG_LEAVE)
     {

@@ -70,15 +70,19 @@ public class SamsungTvRemote {
             "MX: 3\r\n" +
             "ST: urn:samsung.com:device:RemoteControlReceiver:1\r\n\r\n";
 
-        try (MulticastSocket sock = new MulticastSocket(SSDP_PORT)) {
+        // Use a plain DatagramSocket on an ephemeral port (0).
+        // MulticastSocket bound to 1900 would conflict with system SSDP listener
+        // and requires joinGroup(); for M-SEARCH we just send UDP and wait for
+        // unicast responses on the same socket — DatagramSocket is correct here.
+        try (DatagramSocket sock = new DatagramSocket(0)) {
             sock.setSoTimeout(4000);
-            sock.setReuseAddress(true);
+            sock.setBroadcast(true);
 
             byte[] data = query.getBytes(StandardCharsets.UTF_8);
             InetAddress group = InetAddress.getByName(SSDP_ADDR);
             DatagramPacket pkt = new DatagramPacket(data, data.length, group, SSDP_PORT);
             sock.send(pkt);
-            Log.i(TAG, "SSDP M-SEARCH sent");
+            Log.i(TAG, "SSDP M-SEARCH sent from port " + sock.getLocalPort());
 
             // Listen for response
             byte[] buf = new byte[2048];
