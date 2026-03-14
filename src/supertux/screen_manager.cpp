@@ -510,6 +510,15 @@ ScreenManager::update_gamelogic(float dt_sec)
             s_wasm_controllers[i].reset();
         }
       }
+
+      // Zero out controllers for slots that dropped out of player_ids (player disconnected
+      // and removed from the state message). Without this, their Tux keeps the last input
+      // state (e.g. stuck jumping) because no one calls reset() for absent slots.
+      for (int i = static_cast<int>(player_ids.size()); i < network::MAX_PLAYERS; ++i)
+      {
+        s_wasm_controllers[i].update();
+        s_wasm_controllers[i].reset();
+      }
     }
     else if (!player_ids.empty())
     {

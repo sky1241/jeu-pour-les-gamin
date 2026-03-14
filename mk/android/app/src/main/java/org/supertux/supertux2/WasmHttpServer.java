@@ -105,7 +105,8 @@ public class WasmHttpServer {
             }
 
             String ext = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : "";
-            String mime = MIME_TYPES.getOrDefault(ext, "application/octet-stream");
+            // getOrDefault() requires API 24; use explicit containsKey to stay compatible with minSdk 21
+            String mime = MIME_TYPES.containsKey(ext) ? MIME_TYPES.get(ext) : "application/octet-stream";
 
             // Required for SharedArrayBuffer + wasm threads
             String headers = "HTTP/1.1 200 OK\r\n"
