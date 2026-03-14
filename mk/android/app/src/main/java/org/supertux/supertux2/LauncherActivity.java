@@ -255,7 +255,7 @@ public class LauncherActivity extends Activity {
         mHandler.postDelayed(this::launchController, 1500);
     }
 
-    private void launchController() {
+    private void launchControllerOnly() {
         Intent ctrlIntent = getPackageManager()
             .getLaunchIntentForPackage("com.sky1241.controller_app");
         if (ctrlIntent != null) {
@@ -264,8 +264,12 @@ public class LauncherActivity extends Activity {
             startActivity(ctrlIntent);
             Log.i(TAG, "Controller app launched on phone");
         } else {
-            Log.w(TAG, "Controller app not installed — phone will show nothing");
+            Log.w(TAG, "Controller app not installed");
         }
+    }
+
+    private void launchController() {
+        launchControllerOnly();
         // Launcher done — game is on TV, controller (or home) is on phone
         finish();
     }
@@ -404,6 +408,16 @@ public class LauncherActivity extends Activity {
                 return;
             }
         }
+
+        // Launch SuperTux natively in background — it provides the WebSocket
+        // server (port 9876) that both the controller app and the TV browser need.
+        Intent gameIntent = new Intent(this, MainActivity.class);
+        gameIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(gameIntent);
+
+        // Launch the controller app after a short delay (game needs time to start WS server)
+        // Use launchControllerOnly (no finish) — the URL dialog still needs to show.
+        mHandler.postDelayed(this::launchControllerOnly, 2000);
 
         String ip  = getLocalIpAddress();
         String url = "http://" + ip + ":" + WasmHttpServer.PORT + "/";
