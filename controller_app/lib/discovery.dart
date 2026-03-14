@@ -11,6 +11,7 @@ class DiscoveredServer {
 
 class Discovery {
   RawDatagramSocket? _socket;
+  StreamSubscription? _sub;
   bool _stopped = false;
   final void Function(DiscoveredServer server)? onFound;
 
@@ -33,7 +34,8 @@ class Discovery {
 
     _socket!.broadcastEnabled = true;
 
-    _socket!.listen((event) {
+    _sub?.cancel();
+    _sub = _socket!.listen((event) {
       if (event == RawSocketEvent.read) {
         final datagram = _socket!.receive();
         if (datagram == null) return;
@@ -54,6 +56,8 @@ class Discovery {
 
   void stop() {
     _stopped = true;
+    _sub?.cancel();
+    _sub = null;
     _socket?.close();
     _socket = null;
   }

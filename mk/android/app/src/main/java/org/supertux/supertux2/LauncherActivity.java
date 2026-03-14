@@ -364,6 +364,7 @@ public class LauncherActivity extends Activity {
             @Override
             public void onComplete() {
                 mHandler.post(() -> {
+                    if (isFinishing()) return;
                     prog.dismiss();
                     startHttpServerAndShowUrl();
                 });
@@ -434,23 +435,23 @@ public class LauncherActivity extends Activity {
             @Override
             public void onSuccess(String tvIp) {
                 mHandler.post(() -> {
+                    if (isFinishing()) return;
                     searching.dismiss();
-                    if (!isFinishing()) {
-                        Toast.makeText(LauncherActivity.this,
-                            "TV trouvée (" + tvIp + ") — navigateur ouvert !",
-                            Toast.LENGTH_LONG).show();
-                        // Also show manual URL in case user needs to retry
-                        showUrlDialog(gameUrl);
-                    }
+                    Toast.makeText(LauncherActivity.this,
+                        "TV trouvée (" + tvIp + ") — navigateur ouvert !",
+                        Toast.LENGTH_LONG).show();
+                    // Also show manual URL in case user needs to retry
+                    showUrlDialog(gameUrl);
                 });
             }
             @Override
             public void onFailure(String reason) {
                 mHandler.post(() -> {
+                    if (isFinishing()) return;
                     searching.dismiss();
                     Log.w(TAG, "Samsung auto-open failed: " + reason);
                     // No TV found — fall back to manual URL
-                    if (!isFinishing()) showUrlDialog(gameUrl);
+                    showUrlDialog(gameUrl);
                 });
             }
         });

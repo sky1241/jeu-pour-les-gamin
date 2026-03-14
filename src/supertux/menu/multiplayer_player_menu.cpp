@@ -70,7 +70,7 @@ MultiplayerPlayerMenu::MultiplayerPlayerMenu(int player_id)
         if (!GameSession::current()->on_player_removed(player_id))
         {
           log_warning << "Could not find player with ID " << player_id
-                      << " (number " << (player_id + 1) << "in sector"
+                      << " (number " << (player_id + 1) << ") in sector"
                       << std::endl;
         }
       });
@@ -95,7 +95,7 @@ MultiplayerPlayerMenu::MultiplayerPlayerMenu(int player_id)
         }
 
         log_warning << "Could not find player with ID " << player_id
-                    << " (number " << (player_id + 1) << "in sector"
+                    << " (number " << (player_id + 1) << ") in sector"
                     << std::endl;
       });
     }

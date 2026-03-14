@@ -93,9 +93,15 @@ UdpDiscovery::broadcast_loop()
 
   // Enable broadcast
   int broadcast_enable = 1;
-  setsockopt(sock, SOL_SOCKET, SO_BROADCAST,
-             reinterpret_cast<const char*>(&broadcast_enable),
-             sizeof(broadcast_enable));
+  if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST,
+                 reinterpret_cast<const char*>(&broadcast_enable),
+                 sizeof(broadcast_enable)) != 0)
+  {
+    log_warning << "[UDP] Failed to enable SO_BROADCAST" << std::endl;
+    CLOSE_SOCKET(sock);
+    m_running.store(false);
+    return;
+  }
 
   struct sockaddr_in dest;
   std::memset(&dest, 0, sizeof(dest));
@@ -139,7 +145,11 @@ UdpDiscovery::get_local_ip() const
   std::memset(&serv, 0, sizeof(serv));
   serv.sin_family = AF_INET;
   serv.sin_port = htons(80);
-  inet_pton(AF_INET, "8.8.8.8", &serv.sin_addr);
+  if (inet_pton(AF_INET, "8.8.8.8", &serv.sin_addr) <= 0)
+  {
+    closesocket(sock);
+    return "127.0.0.1";
+  }
 
   if (connect(sock, reinterpret_cast<struct sockaddr*>(&serv), sizeof(serv)) != 0)
   {
@@ -149,11 +159,16 @@ UdpDiscovery::get_local_ip() const
 
   struct sockaddr_in local;
   int addrlen = sizeof(local);
-  getsockname(sock, reinterpret_cast<struct sockaddr*>(&local), &addrlen);
+  if (getsockname(sock, reinterpret_cast<struct sockaddr*>(&local), &addrlen) != 0)
+  {
+    closesocket(sock);
+    return "127.0.0.1";
+  }
   closesocket(sock);
 
   char buf[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &local.sin_addr, buf, sizeof(buf));
+  if (!inet_ntop(AF_INET, &local.sin_addr, buf, sizeof(buf)))
+    return "127.0.0.1";
   return std::string(buf);
 #else
   struct ifaddrs* addrs = nullptr;
@@ -175,7 +190,8 @@ UdpDiscovery::get_local_ip() const
 
     auto* sa = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
     char buf[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &sa->sin_addr, buf, sizeof(buf));
+    if (!inet_ntop(AF_INET, &sa->sin_addr, buf, sizeof(buf)))
+      continue;
     std::string ip(buf);
 
     if (ip == "127.0.0.1")
@@ -184,13 +200,14 @@ UdpDiscovery::get_local_ip() const
     std::string iface(ifa->ifa_name);
 
     // Skip Wi-Fi Direct / Miracast / dummy interfaces
-    if (iface.substr(0, 3) == "p2p" ||
-        iface.substr(0, 5) == "dummy" ||
-        iface.substr(0, 2) == "lo")
+    auto starts = [](const std::string& s, const char* prefix) {
+      return s.compare(0, std::strlen(prefix), prefix) == 0;
+    };
+    if (starts(iface, "p2p") || starts(iface, "dummy") || starts(iface, "lo"))
       continue;
 
     if (preferred == "127.0.0.1" &&
-        (iface.substr(0, 4) == "wlan" || iface.substr(0, 3) == "eth"))
+        (starts(iface, "wlan") || starts(iface, "eth")))
     {
       preferred = ip;
     }

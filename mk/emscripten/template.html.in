@@ -551,20 +551,23 @@
       var xhr = new XMLHttpRequest();
       xhr.onreadystatechange = function() {
         if (xhr.readyState == 4) {
-          var data = new Uint8Array(xhr.response);
-          var stream = FS.open(file, 'w+');
-          FS.write(stream, data, 0, data.length, 0);
-          FS.close(stream);
-          onDownloadFinished(ptr, id, "");
+          if (xhr.status >= 200 && xhr.status < 300) {
+            var data = new Uint8Array(xhr.response);
+            var stream = FS.open(file, 'w+');
+            FS.write(stream, data, 0, data.length, 0);
+            FS.close(stream);
+            onDownloadFinished(ptr, id, "");
+          } else {
+            onDownloadError(ptr, id);
+          }
         }
       };
+      xhr.addEventListener('progress', (e) => { onDownloadProgress(ptr, id, e.loaded, e.total); });
+      xhr.addEventListener('error', (e) => { onDownloadError(ptr, id); });
+      xhr.addEventListener('abort', (e) => { onDownloadAborted(ptr, id); });
       xhr.responseType = "arraybuffer";
       xhr.open("GET", url);
       xhr.send();
-
-      xhr.addEventListener('progress', (e) => { onDownloadProgress(ptr, id, e.loaded, e.total); });
-      xhr.addEventListener('error', (e) => { onDownloadError(ptr, id); });
-      xhr.addEventListener('abort', (e) => { onDownloadAborted(ptr, id); })
     }
     window.supertux_xhr_string_download = function(ptr, id, url) {
       console.log('downloader: ' + ptr);
@@ -577,16 +580,19 @@
       var xhr = new XMLHttpRequest();
       xhr.onreadystatechange = function() {
         if (xhr.readyState == 4) {
-          onDownloadFinished(ptr, id, xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            onDownloadFinished(ptr, id, xhr.responseText);
+          } else {
+            onDownloadError(ptr, id);
+          }
         }
       };
+      xhr.addEventListener('progress', (e) => { onDownloadProgress(ptr, id, e.loaded, e.total); });
+      xhr.addEventListener('error', (e) => { onDownloadError(ptr, id); });
+      xhr.addEventListener('abort', (e) => { onDownloadAborted(ptr, id); });
       xhr.responseType = "text";
       xhr.open("GET", url);
       xhr.send();
-
-      xhr.addEventListener('progress', (e) => { onDownloadProgress(ptr, id, e.loaded, e.total); });
-      xhr.addEventListener('error', (e) => { onDownloadError(ptr, id); });
-      xhr.addEventListener('abort', (e) => { onDownloadAborted(ptr, id); })
     }
 
     window.addEventListener('resize', (e) => {

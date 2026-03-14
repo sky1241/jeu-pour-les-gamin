@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Minimal HTTP server that serves WebAssembly game files from internal storage.
@@ -52,7 +53,15 @@ public class WasmHttpServer {
     public void stop() {
         mRunning = false;
         try { if (mServerSocket != null) mServerSocket.close(); } catch (IOException ignored) {}
-        if (mPool != null) mPool.shutdown();
+        if (mPool != null) {
+            mPool.shutdown();
+            try {
+                if (!mPool.awaitTermination(3, TimeUnit.SECONDS))
+                    mPool.shutdownNow();
+            } catch (InterruptedException e) {
+                mPool.shutdownNow();
+            }
+        }
         Log.i(TAG, "HTTP server stopped");
     }
 

@@ -23,6 +23,7 @@ class WsClient {
   final String playerId;
 
   WebSocketChannel? _channel;
+  StreamSubscription? _streamSub;
   String? color;
   bool connected = false;
 
@@ -68,6 +69,8 @@ class WsClient {
     players.clear();
     color = null;
 
+    // Close any stale channel from a previous attempt before creating a new one
+    _channel?.sink.close();
     final uri = Uri.parse('ws://$host:$port');
     _channel = WebSocketChannel.connect(uri);
 
@@ -75,7 +78,8 @@ class WsClient {
 
     connected = true;
 
-    _channel!.stream.listen(
+    _streamSub?.cancel();
+    _streamSub = _channel!.stream.listen(
       _onMessage,
       onDone: _onDone,
       onError: (e) => _onDone(),
@@ -95,7 +99,12 @@ class WsClient {
   }
 
   void _onMessage(dynamic raw) {
-    final msg = jsonDecode(raw as String) as Map<String, dynamic>;
+    final Map<String, dynamic> msg;
+    try {
+      msg = jsonDecode(raw as String) as Map<String, dynamic>;
+    } catch (_) {
+      return; // ignore malformed JSON
+    }
     final type = msg['type'] as String?;
 
     switch (type) {
@@ -129,8 +138,11 @@ class WsClient {
   }
 
   void _onDone() {
+    if (!connected) return; // guard: onError + onDone both fire on stream error
     connected = false;
     _sendTimer?.cancel();
+    _streamSub?.cancel();
+    _streamSub = null;
     _channel = null;
     onDisconnect?.call();
   }
@@ -188,6 +200,8 @@ class WsClient {
 
   void disconnect() {
     _sendTimer?.cancel();
+    _streamSub?.cancel();
+    _streamSub = null;
     _channel?.sink.close();
     _channel = null;
     connected = false;

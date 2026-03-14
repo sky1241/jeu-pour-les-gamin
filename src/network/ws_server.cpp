@@ -5,6 +5,7 @@
 #include "network/ws_server.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include <ixwebsocket/IXWebSocketServer.h>
 #include <ixwebsocket/IXWebSocket.h>
@@ -94,10 +95,22 @@ WsServer::stop()
 void
 WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
 {
+  // Reject oversized messages to prevent OOM from malicious clients
+  if (msg.size() > 2048)
+    return;
+
   try
   {
     auto j = json::parse(msg);
     std::string type = j.value("type", "");
+
+    // TV clients are passive listeners — reject player actions from them
+    if (type != MSG_TV_CLIENT)
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      if (m_tv_clients.count(&ws))
+        return;
+    }
 
     if (type == MSG_TV_CLIENT)
     {
@@ -259,11 +272,7 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
       } // release lock before sending
 
       // Broadcast state to all clients (send is non-blocking in IXWebSocket)
-      auto clients = m_server->getClients();
-      for (auto& client : clients)
-      {
-        client->send(state_str);
-      }
+      broadcast(state_str);
     }
     else if (type == MSG_INPUT)
     {
@@ -272,11 +281,18 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
       bool has_tv_clients = false;
       {
         std::lock_guard<std::mutex> lock(m_mutex);
+        // Verify the WebSocket connection actually owns this player_id
+        auto ws_it = m_ws_to_player.find(&ws);
+        if (ws_it == m_ws_to_player.end() || ws_it->second != pid)
+          return; // spoofed player_id — ignore
+
         auto it = m_inputs.find(pid);
         if (it != m_inputs.end())
         {
-          it->second.stick_x = j.value("stick_x", 0.0f);
-          it->second.stick_y = j.value("stick_y", 0.0f);
+          float sx = j.value("stick_x", 0.0f);
+          float sy = j.value("stick_y", 0.0f);
+          it->second.stick_x = std::isfinite(sx) ? std::clamp(sx, -1.0f, 1.0f) : 0.0f;
+          it->second.stick_y = std::isfinite(sy) ? std::clamp(sy, -1.0f, 1.0f) : 0.0f;
           it->second.btn_a   = j.value("btn_a", false);
           it->second.btn_b   = j.value("btn_b", false);
         }
@@ -299,6 +315,11 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
       bool do_broadcast_start = false;
       {
         std::lock_guard<std::mutex> lock(m_mutex);
+        // Verify the WebSocket connection actually owns this player_id
+        auto ws_it = m_ws_to_player.find(&ws);
+        if (ws_it == m_ws_to_player.end() || ws_it->second != pid)
+          return; // spoofed player_id — ignore
+
         // Only the first *connected* player (session host) can start
         std::string host_pid;
         for (const auto& order_pid : m_player_order)
@@ -322,12 +343,7 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
       {
         json start_j;
         start_j["type"] = MSG_START;
-        std::string start_str = start_j.dump();
-        auto clients = m_server->getClients();
-        for (auto& client : clients)
-        {
-          client->send(start_str);
-        }
+        broadcast(start_j.dump());
       }
     }
   }
@@ -454,11 +470,15 @@ WsServer::broadcast_victory(const std::string& winner_name)
 void
 WsServer::broadcast(const std::string& json_str)
 {
-  if (!m_server)
-    return;
+  // Grab shared_ptrs under lock so m_server can't be destroyed mid-call
+  std::set<std::shared_ptr<ix::WebSocket>> clients;
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_server)
+      return;
+    clients = m_server->getClients();
+  }
 
-  // Send to all connected clients (players + TV browsers)
-  auto clients = m_server->getClients();
   for (auto& client : clients)
   {
     client->send(json_str);

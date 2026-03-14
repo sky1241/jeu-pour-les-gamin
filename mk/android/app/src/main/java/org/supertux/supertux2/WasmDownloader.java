@@ -98,16 +98,16 @@ public class WasmDownloader {
             Log.i(TAG, "Downloading: " + urlStr);
 
             File   tmp = new File(mWasmDir, localName + ".tmp");
+            HttpURLConnection conn = null;
             try {
                 URL url = new URL(urlStr);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(15_000);
                 conn.setReadTimeout(60_000);
                 conn.connect();
 
                 int status = conn.getResponseCode();
                 if (status != HttpURLConnection.HTTP_OK) {
-                    conn.disconnect();
                     tmp.delete();
                     callback.onError("Erreur HTTP " + status + " pour " + remoteName);
                     return;
@@ -130,7 +130,6 @@ public class WasmDownloader {
                         callback.onProgress(localName, i, FILES.length, downloaded, total);
                     }
                 }
-                conn.disconnect();
 
                 // Atomic rename
                 if (!tmp.renameTo(dest)) {
@@ -146,6 +145,8 @@ public class WasmDownloader {
                 callback.onError("Erreur lors du téléchargement de " + remoteName
                     + ":\n" + e.getMessage());
                 return;
+            } finally {
+                if (conn != null) conn.disconnect();
             }
         }
 

@@ -200,6 +200,7 @@ public class SamsungTvRemote {
             b = in.read();
             if (b < 0) break;
             sb.append((char) b);
+            if (sb.length() > 8192) break; // sanity limit for HTTP headers
             // Detect end of headers (\r\n\r\n)
             String s = sb.toString();
             if (s.contains("\r\n\r\n")) {

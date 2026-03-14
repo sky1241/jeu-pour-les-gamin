@@ -45,7 +45,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
   Future<void> _tryReconnect() async {
-    if (!mounted) return;
+    if (!mounted || _reconnecting) return; // prevent parallel loops
     setState(() {
       _reconnecting = true;
       _reconnectAttempts = 0;
@@ -72,6 +72,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   @override
   void dispose() {
+    // Clear callbacks BEFORE disconnect to prevent onDisconnect from firing
+    // during disconnect() and triggering _tryReconnect on a disposed widget.
+    widget.client.onDisconnect = null;
+    widget.client.onVictory = null;
+    widget.client.onStateUpdate = null;
+    // Now safe to disconnect — no callbacks will fire.
     widget.client.disconnect();
     super.dispose();
   }
@@ -108,8 +114,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
     final playerColor = widget.client.color;
     Color accent = const Color(0xFF4CAF50);
     if (playerColor != null && playerColor.startsWith('#')) {
-      final hex = playerColor.replaceFirst('#', '');
-      accent = Color(int.parse('FF$hex', radix: 16));
+      try {
+        final hex = playerColor.replaceFirst('#', '');
+        accent = Color(int.parse('FF$hex', radix: 16));
+      } catch (_) {
+        // keep default accent on malformed color
+      }
     }
 
     return Scaffold(

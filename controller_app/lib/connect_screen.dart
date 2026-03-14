@@ -53,19 +53,20 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
   }
 
   Future<void> _tryLocalhostThenDiscover() async {
+    WsClient? client;
     try {
       final name = _nameController.text.trim().isEmpty ? 'Player' : _nameController.text.trim();
-      final client = WsClient(host: '127.0.0.1', port: 9876, playerName: name);
+      client = WsClient(host: '127.0.0.1', port: 9876, playerName: name);
       await client.connect().timeout(const Duration(seconds: 2));
-      if (!mounted) return;
+      if (!mounted) { client.disconnect(); return; }
       await _saveName(name);
-      if (!mounted) return;
+      if (!mounted) { client.disconnect(); return; }
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => ControllerScreen(client: client)),
+        MaterialPageRoute(builder: (_) => ControllerScreen(client: client!)),
       );
       return;
     } catch (_) {
-      // Localhost failed — SuperTux not on this device, try network discovery
+      client?.disconnect(); // close partially-opened channel
     }
     if (!mounted) return;
     _startDiscovery();
@@ -104,19 +105,21 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
       _error = null;
     });
 
+    WsClient? client;
     try {
-      final client = WsClient(host: ip, port: port, playerName: name);
+      client = WsClient(host: ip, port: port, playerName: name);
       await client.connect().timeout(const Duration(seconds: 5));
 
-      if (!mounted) return;
+      if (!mounted) { client.disconnect(); return; }
       await _saveName(name);
-      if (!mounted) return;
+      if (!mounted) { client.disconnect(); return; }
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => ControllerScreen(client: client),
+          builder: (_) => ControllerScreen(client: client!),
         ),
       );
     } catch (e) {
+      client?.disconnect(); // close partially-opened channel
       if (!mounted) return;
       setState(() {
         _connecting = false;
