@@ -53,21 +53,29 @@ class _ConnectScreenState extends State<ConnectScreen> with SingleTickerProvider
   }
 
   Future<void> _tryLocalhostThenDiscover() async {
-    WsClient? client;
-    try {
-      final name = _nameController.text.trim().isEmpty ? 'Player' : _nameController.text.trim();
-      client = WsClient(host: '127.0.0.1', port: 9876, playerName: name);
-      await client.connect().timeout(const Duration(seconds: 2));
-      if (!mounted) { client.disconnect(); return; }
-      await _saveName(name);
-      if (!mounted) { client.disconnect(); return; }
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => ControllerScreen(client: client!)),
-      );
-      return;
-    } catch (_) {
-      client?.disconnect(); // close partially-opened channel
+    // Retry localhost multiple times — the game may still be loading when
+    // the controller app starts (especially after launcher auto-launch).
+    final name = _nameController.text.trim().isEmpty ? 'Player' : _nameController.text.trim();
+    for (int attempt = 0; attempt < 5; attempt++) {
+      if (!mounted) return;
+      WsClient? client;
+      try {
+        client = WsClient(host: '127.0.0.1', port: 9876, playerName: name);
+        await client.connect().timeout(const Duration(seconds: 3));
+        if (!mounted) { client.disconnect(); return; }
+        await _saveName(name);
+        if (!mounted) { client.disconnect(); return; }
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => ControllerScreen(client: client!)),
+        );
+        return;
+      } catch (_) {
+        client?.disconnect();
+      }
+      // Wait before retrying (game needs time to start WS server)
+      await Future.delayed(const Duration(seconds: 2));
     }
+    // Localhost failed after retries — fall back to UDP discovery
     if (!mounted) return;
     _startDiscovery();
   }
