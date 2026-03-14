@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "network/player_input.hpp"
+#include "network/protocol.hpp"
 
 namespace network {
 
