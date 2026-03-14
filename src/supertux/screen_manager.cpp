@@ -526,6 +526,18 @@ ScreenManager::update_gamelogic(float dt_sec)
       auto it = all_inputs.find(player_ids[0]);
       if (it != all_inputs.end() && it->second.connected)
         wasm_apply(it->second, controller);
+      else {
+        // P1 in list but not connected — zero main controller so Tux stops
+        static const network::PlayerInput s_zero_wasm;
+        wasm_apply(s_zero_wasm, controller);
+      }
+    }
+    else
+    {
+      // No players at all — zero main controller so Tux doesn't drift with
+      // stale input state (in wasm there are no SDL key events to reset it).
+      static const network::PlayerInput s_zero_wasm_empty;
+      wasm_apply(s_zero_wasm_empty, controller);
     }
   }
 #endif // __EMSCRIPTEN__
