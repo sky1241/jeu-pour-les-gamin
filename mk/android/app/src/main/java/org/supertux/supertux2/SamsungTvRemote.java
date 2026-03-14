@@ -5,6 +5,7 @@ import android.util.Log;
 
 import java.io.*;
 import java.net.*;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -118,10 +119,12 @@ public class SamsungTvRemote {
      */
     private boolean openUrl(String tvIp, String gameUrl) {
         try {
-            // App name shown in the TV pairing dialog (must be Base64-encoded)
+            // App name shown in the TV pairing dialog (must be Base64-encoded then URL-encoded
+            // because Base64 padding '=' is not valid in a URL query parameter)
             String appName = Base64.encodeToString(
                 "SuperTux".getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-            String wsPath = "/api/v2/channels/samsung.remote.control?name=" + appName;
+            String wsPath = "/api/v2/channels/samsung.remote.control?name="
+                + URLEncoder.encode(appName, "UTF-8");
 
             // Minimal WebSocket handshake + text frame send
             try (Socket sock = new Socket()) {
@@ -191,7 +194,7 @@ public class SamsungTvRemote {
     /** Read HTTP response headers, return true if status is 101. */
     private static boolean readHttpResponse(InputStream in) throws IOException {
         StringBuilder sb = new StringBuilder();
-        int b, prev = -1;
+        int b;
         boolean got101 = false;
         while (true) {
             b = in.read();
@@ -219,8 +222,10 @@ public class SamsungTvRemote {
 
         long len = b1 & 0x7F;
         if (len == 126) {
-            len  = (in.read() & 0xFF) << 8;
-            len |= (in.read() & 0xFF);
+            int hi = in.read();
+            int lo = in.read();
+            if (hi < 0 || lo < 0) return "";
+            len = ((hi & 0xFF) << 8) | (lo & 0xFF);
         } else if (len == 127) {
             // 8-byte length — skip (shouldn't happen for small JSON messages)
             for (int i = 0; i < 8; i++) in.read();

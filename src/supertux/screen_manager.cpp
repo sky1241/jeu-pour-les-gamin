@@ -346,7 +346,7 @@ ScreenManager::update_gamelogic(float dt_sec)
 
     // Get current sector to access players
     auto* session = GameSession::current();
-    Sector* sector = (session && Sector::current()) ? Sector::current() : nullptr;
+    Sector* sector = session ? Sector::current() : nullptr;
 
     if (sector && !player_ids.empty())
     {
@@ -449,7 +449,7 @@ ScreenManager::update_gamelogic(float dt_sec)
     auto all_inputs = network::WasmInputClient::get_all_inputs();
 
     auto* session = GameSession::current();
-    Sector* sector = (session && Sector::current()) ? Sector::current() : nullptr;
+    Sector* sector = session ? Sector::current() : nullptr;
 
     if (sector && !player_ids.empty())
     {
