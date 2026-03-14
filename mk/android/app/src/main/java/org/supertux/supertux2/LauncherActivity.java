@@ -187,6 +187,9 @@ public class LauncherActivity extends Activity {
             mDisplayManager.unregisterDisplayListener(mDisplayListener);
         }
         try { unregisterReceiver(mWifiDisplayReceiver); } catch (Exception ignored) {}
+        // Cancel any in-progress background workers to avoid wasted bandwidth/battery
+        if (mWasmDownloader != null) mWasmDownloader.cancel();
+        if (mSamsungRemote  != null) mSamsungRemote.cancel();
         // WasmHttpServer keeps running in background (daemon thread) so the TV
         // can finish loading files after the launcher finishes itself.
         // It will be GC'd when the process ends.
