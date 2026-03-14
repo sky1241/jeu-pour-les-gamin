@@ -3,12 +3,17 @@ package org.supertux.supertux2;
 import android.app.Activity;
 import android.app.ActivityOptions;
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.hardware.display.DisplayManager;
+import android.net.Uri;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -17,6 +22,12 @@ import android.os.Parcelable;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Display;
+import android.widget.Toast;
+
+import java.net.NetworkInterface;
+import java.util.Enumeration;
+import java.net.InetAddress;
+import java.net.Inet4Address;
 
 /**
  * Entry point when the user taps the SuperTux icon.
@@ -37,10 +48,14 @@ public class LauncherActivity extends Activity {
     private static final String PREFS_NAME = "supertux_prefs";
     private static final String PREF_TV_USED = "tv_connected_before";
 
-    private DisplayManager mDisplayManager;
-    private boolean mGameLaunched = false;
-    private AlertDialog mTVDialog;
-    private final Handler mHandler = new Handler(Looper.getMainLooper());
+    private DisplayManager  mDisplayManager;
+    private boolean         mGameLaunched = false;
+    private AlertDialog     mTVDialog;
+    private final Handler   mHandler = new Handler(Looper.getMainLooper());
+
+    // WebAssembly TV mode
+    private WasmHttpServer  mWasmServer;
+    private WasmDownloader  mWasmDownloader;
 
     // -------------------------------------------------------------------------
     // Samsung Smart View / Miracast broadcast
@@ -119,6 +134,11 @@ public class LauncherActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         mDisplayManager = (DisplayManager) getSystemService(DISPLAY_SERVICE);
+        if (mDisplayManager == null) {
+            // Should never happen, but guard against it
+            launchGameLocally();
+            return;
+        }
         mDisplayManager.registerDisplayListener(mDisplayListener, mHandler);
 
         IntentFilter filter = new IntentFilter();
@@ -166,6 +186,9 @@ public class LauncherActivity extends Activity {
             mDisplayManager.unregisterDisplayListener(mDisplayListener);
         }
         try { unregisterReceiver(mWifiDisplayReceiver); } catch (Exception ignored) {}
+        // WasmHttpServer keeps running in background (daemon thread) so the TV
+        // can finish loading files after the launcher finishes itself.
+        // It will be GC'd when the process ends.
         super.onDestroy();
     }
 
@@ -173,6 +196,7 @@ public class LauncherActivity extends Activity {
     // Display detection
     // -------------------------------------------------------------------------
     private boolean checkForExternalDisplay() {
+        if (mDisplayManager == null) return false;
         Display[] all = mDisplayManager.getDisplays();
         for (Display d : all) {
             if (d.getDisplayId() != Display.DEFAULT_DISPLAY) {
@@ -268,13 +292,169 @@ public class LauncherActivity extends Activity {
         if (mGameLaunched || isFinishing()) return;
         mTVDialog = new AlertDialog.Builder(this)
             .setTitle("Jouer sur la TV ?")
-            .setMessage("Appuie sur \"Ouvrir Smart View\" et sélectionne ta TV.\n\n"
-                + "Le jeu s'affichera sur la TV,\nle contrôleur sur ce téléphone !")
+            .setMessage("Choisis comment afficher le jeu sur la TV :\n\n"
+                + "• Smart View (Miracast) — le téléphone projette l'écran\n"
+                + "• Via navigateur (Web) — la TV charge le jeu directement\n")
             .setPositiveButton("Ouvrir Smart View", (d, w) -> openSmartView())
-            .setNegativeButton("Jouer sur le téléphone", (d, w) -> launchGameLocally())
+            .setNeutralButton("Via navigateur (Web)", (d, w) -> startWasmMode())
+            .setNegativeButton("Jouer ici", (d, w) -> launchGameLocally())
             .setCancelable(false)
             .create();
         mTVDialog.show();
+    }
+
+    // -------------------------------------------------------------------------
+    // WebAssembly TV mode
+    // -------------------------------------------------------------------------
+
+    /**
+     * "Jouer sur la TV (Web)" flow:
+     *   1. Download wasm files from GitHub Pages if not cached (~100 MB, once).
+     *   2. Start a local HTTP server on port 8080.
+     *   3. Show the URL so the user can open it on the TV browser.
+     */
+    private void startWasmMode() {
+        if (isFinishing()) return;
+        mWasmDownloader = new WasmDownloader(this);
+
+        if (mWasmDownloader.isDownloaded()) {
+            startHttpServerAndShowUrl();
+            return;
+        }
+
+        // Show download progress dialog
+        ProgressDialog prog = new ProgressDialog(this);
+        prog.setTitle("Téléchargement du jeu Web");
+        prog.setMessage("Téléchargement en cours…");
+        prog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        prog.setMax(100);
+        prog.setCancelable(true);
+        prog.setOnCancelListener(d -> {
+            if (mWasmDownloader != null) mWasmDownloader.cancel();
+        });
+        prog.show();
+
+        mWasmDownloader.download(new WasmDownloader.ProgressCallback() {
+            @Override
+            public void onProgress(String filename, int fileIndex, int totalFiles,
+                                   long bytesDownloaded, long totalBytes) {
+                // Overall progress: (completed files + current file fraction) / total files
+                int filesDone = fileIndex; // files before this one are done
+                float fraction = totalBytes > 0 ? (float) bytesDownloaded / totalBytes : 0f;
+                int overall = (int) ((filesDone + fraction) * 100 / totalFiles);
+
+                mHandler.post(() -> {
+                    if (!prog.isShowing()) return;
+                    prog.setProgress(overall);
+                    // Show MB downloaded for large files
+                    String msg = "Fichier " + (fileIndex + 1) + "/" + totalFiles
+                        + ": " + filename;
+                    if (totalBytes > 1024 * 1024) {
+                        msg += "\n" + (bytesDownloaded / 1048576) + " / "
+                            + (totalBytes / 1048576) + " Mo";
+                    }
+                    prog.setMessage(msg);
+                });
+            }
+
+            @Override
+            public void onComplete() {
+                mHandler.post(() -> {
+                    prog.dismiss();
+                    startHttpServerAndShowUrl();
+                });
+            }
+
+            @Override
+            public void onError(String message) {
+                mHandler.post(() -> {
+                    prog.dismiss();
+                    if (!isFinishing()) {
+                        new AlertDialog.Builder(LauncherActivity.this)
+                            .setTitle("Erreur de téléchargement")
+                            .setMessage(message + "\n\nVérifie ta connexion internet et réessaie.")
+                            .setPositiveButton("Réessayer", (d, w) -> startWasmMode())
+                            .setNegativeButton("Annuler", null)
+                            .show();
+                    }
+                });
+            }
+        });
+    }
+
+    private void startHttpServerAndShowUrl() {
+        if (mWasmServer == null || !mWasmServer.isRunning()) {
+            mWasmServer = new WasmHttpServer(this);
+            try {
+                mWasmServer.start();
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to start HTTP server: " + e.getMessage());
+                if (!isFinishing()) {
+                    new AlertDialog.Builder(this)
+                        .setTitle("Erreur serveur")
+                        .setMessage("Impossible de démarrer le serveur HTTP :\n" + e.getMessage())
+                        .setPositiveButton("OK", null)
+                        .show();
+                }
+                return;
+            }
+        }
+
+        String ip  = getLocalIpAddress();
+        String url = "http://" + ip + ":" + WasmHttpServer.PORT + "/";
+
+        new AlertDialog.Builder(this)
+            .setTitle("Jeu prêt sur la TV !")
+            .setMessage("Sur le navigateur de la TV, ouvre :\n\n"
+                + url + "\n\n"
+                + "Le jeu démarrera directement dans le navigateur.\n"
+                + "Appuie sur \"Copier l'URL\" pour la partager facilement.")
+            .setPositiveButton("Copier l'URL", (d, w) -> {
+                ClipboardManager cm = (ClipboardManager)
+                    getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(ClipData.newPlainText("SuperTux URL", url));
+                    Toast.makeText(this, "URL copiée !", Toast.LENGTH_SHORT).show();
+                }
+            })
+            .setNeutralButton("Ouvrir sur ce téléphone", (d, w) -> {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            })
+            .setNegativeButton("Fermer", null)
+            .show();
+    }
+
+    private String getLocalIpAddress() {
+        // Prefer WiFi address
+        try {
+            WifiManager wm = (WifiManager) getApplicationContext()
+                .getSystemService(WIFI_SERVICE);
+            if (wm != null) {
+                int ip4 = wm.getConnectionInfo().getIpAddress();
+                if (ip4 != 0) {
+                    return String.format("%d.%d.%d.%d",
+                        (ip4 & 0xff), (ip4 >> 8 & 0xff),
+                        (ip4 >> 16 & 0xff), (ip4 >> 24 & 0xff));
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // Fallback: enumerate network interfaces
+        try {
+            Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
+            while (ifaces.hasMoreElements()) {
+                NetworkInterface iface = ifaces.nextElement();
+                Enumeration<InetAddress> addrs = iface.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    InetAddress addr = addrs.nextElement();
+                    if (!addr.isLoopbackAddress() && addr instanceof Inet4Address) {
+                        return addr.getHostAddress();
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return "localhost";
     }
 
     /** Fallback: no TV, just launch the game on the phone. */
