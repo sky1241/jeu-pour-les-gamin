@@ -48,6 +48,8 @@
 #ifndef __EMSCRIPTEN__
 #include "network/input_dispatcher.hpp"
 #include "network/ws_server.hpp"
+#else
+#include "network/wasm_input.hpp"
 #endif
 
 #include <stdio.h>
@@ -426,7 +428,98 @@ ScreenManager::update_gamelogic(float dt_sec)
         network::InputDispatcher::apply_to_controller(it->second, controller);
     }
   }
-#endif
+#endif // !__EMSCRIPTEN__
+
+#ifdef __EMSCRIPTEN__
+  // Wasm TV mode: apply inputs relayed from the phone's WS server.
+  // InputDispatcher is excluded from wasm builds, so we inline the mapping.
+  auto wasm_apply = [](const network::PlayerInput& inp, Controller& ctrl) {
+    constexpr float DZ = 0.2f;
+    ctrl.set_control(Control::LEFT,   inp.stick_x < -DZ);
+    ctrl.set_control(Control::RIGHT,  inp.stick_x >  DZ);
+    ctrl.set_control(Control::UP,     inp.stick_y >  DZ);
+    ctrl.set_control(Control::DOWN,   inp.stick_y < -DZ);
+    ctrl.set_control(Control::JUMP,   inp.btn_a);
+    ctrl.set_control(Control::ACTION, inp.btn_b);
+  };
+  {
+    static Controller s_wasm_controllers[network::MAX_PLAYERS];
+
+    auto player_ids = network::WasmInputClient::get_player_ids();
+    auto all_inputs = network::WasmInputClient::get_all_inputs();
+
+    auto* session = GameSession::current();
+    Sector* sector = (session && Sector::current()) ? Sector::current() : nullptr;
+
+    if (sector && !player_ids.empty())
+    {
+      auto players = sector->get_players();
+
+      // Spawn extra Tux characters for each connected phone controller
+      int max_connected_slot = -1;
+      for (int i = 0; i < static_cast<int>(player_ids.size()); ++i)
+      {
+        auto it = all_inputs.find(player_ids[i]);
+        if (it != all_inputs.end() && it->second.connected)
+          max_connected_slot = i;
+      }
+      int spawn_target = max_connected_slot + 1;
+
+      while (!players.empty()
+             && static_cast<int>(players.size()) < spawn_target
+             && static_cast<int>(players.size()) < network::MAX_PLAYERS)
+      {
+        int new_id = static_cast<int>(players.size());
+        auto& player_status = players[0]->get_status();
+        if (player_status.m_num_players <= new_id)
+          player_status.add_player();
+        sector->add<Player>(player_status, "Tux" + std::to_string(new_id + 1), new_id);
+        sector->flush_game_objects();
+        players = sector->get_players();
+
+        if (new_id < network::MAX_PLAYERS)
+        {
+          s_wasm_controllers[new_id].reset();
+          players[new_id]->set_controller(&s_wasm_controllers[new_id]);
+        }
+      }
+
+      // Apply inputs from each connected phone controller
+      for (int i = 0; i < static_cast<int>(player_ids.size())
+                      && i < static_cast<int>(players.size()); ++i)
+      {
+        auto it        = all_inputs.find(player_ids[i]);
+        bool connected = (it != all_inputs.end() && it->second.connected);
+
+        if (i == 0)
+        {
+          // Player 1 drives the main keyboard controller
+          if (connected)
+            wasm_apply(it->second, controller);
+          else {
+            static const network::PlayerInput s_zero;
+            wasm_apply(s_zero, controller);
+          }
+        }
+        else if (i < network::MAX_PLAYERS)
+        {
+          s_wasm_controllers[i].update();
+          if (connected)
+            wasm_apply(it->second, s_wasm_controllers[i]);
+          else
+            s_wasm_controllers[i].reset();
+        }
+      }
+    }
+    else if (!player_ids.empty())
+    {
+      // Title screen / worldmap: first phone drives main controller
+      auto it = all_inputs.find(player_ids[0]);
+      if (it != all_inputs.end() && it->second.connected)
+        wasm_apply(it->second, controller);
+    }
+  }
+#endif // __EMSCRIPTEN__
 
   SquirrelVirtualMachine::current()->update(g_game_time);
 

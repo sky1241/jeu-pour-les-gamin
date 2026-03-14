@@ -50,6 +50,8 @@ extern "C" {
 #ifndef __EMSCRIPTEN__
 #include "network/udp_discovery.hpp"
 #include "network/ws_server.hpp"
+#else
+#include "network/wasm_input.hpp"
 #endif
 #include "object/player.hpp"
 #include "object/spawnpoint.hpp"
@@ -771,6 +773,8 @@ Main::run(int argc, char** argv)
 
 #ifdef __EMSCRIPTEN__
   init_emscripten();
+  // Connect to the phone's WS server to receive relayed controller inputs
+  network::WasmInputClient::init();
 #endif
 
 #ifdef WIN32

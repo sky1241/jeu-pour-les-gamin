@@ -72,6 +72,7 @@ private:
   std::map<std::string, PlayerInput> m_inputs;         // player_id -> input
   std::vector<std::string> m_player_order;             // join order
   std::map<ix::WebSocket*, std::string> m_ws_to_player; // raw ptr -> player_id
+  std::set<ix::WebSocket*>              m_tv_clients;   // TV wasm browsers (passive listeners)
 
   bool m_start_requested;
   bool m_running;

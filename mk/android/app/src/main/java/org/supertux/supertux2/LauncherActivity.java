@@ -56,6 +56,7 @@ public class LauncherActivity extends Activity {
     // WebAssembly TV mode
     private WasmHttpServer  mWasmServer;
     private WasmDownloader  mWasmDownloader;
+    private SamsungTvRemote mSamsungRemote;
 
     // -------------------------------------------------------------------------
     // Samsung Smart View / Miracast broadcast
@@ -403,12 +404,63 @@ public class LauncherActivity extends Activity {
         String ip  = getLocalIpAddress();
         String url = "http://" + ip + ":" + WasmHttpServer.PORT + "/";
 
+        // Try Samsung TV auto-open first, then fall back to manual URL dialog
+        tryAutoOpenSamsungTv(url);
+    }
+
+    /**
+     * Attempt SSDP discovery + Samsung Remote API to auto-open the browser on the TV.
+     * Shows a "Recherche TV..." dialog during discovery, then either:
+     *   - success → brief toast + manual URL dialog (in case TV needs interaction)
+     *   - failure → manual URL dialog directly
+     */
+    private void tryAutoOpenSamsungTv(String gameUrl) {
+        if (isFinishing()) return;
+
+        android.app.ProgressDialog searching = new android.app.ProgressDialog(this);
+        searching.setTitle("Recherche de ta TV...");
+        searching.setMessage("Scan du réseau WiFi pour une TV Samsung...");
+        searching.setCancelable(true);
+        searching.setOnCancelListener(d -> {
+            if (mSamsungRemote != null) mSamsungRemote.cancel();
+        });
+        searching.show();
+
+        mSamsungRemote = new SamsungTvRemote();
+        mSamsungRemote.discoverAndOpen(gameUrl, new SamsungTvRemote.Callback() {
+            @Override
+            public void onSuccess(String tvIp) {
+                mHandler.post(() -> {
+                    searching.dismiss();
+                    if (!isFinishing()) {
+                        Toast.makeText(LauncherActivity.this,
+                            "TV trouvée (" + tvIp + ") — navigateur ouvert !",
+                            Toast.LENGTH_LONG).show();
+                        // Also show manual URL in case user needs to retry
+                        showUrlDialog(gameUrl);
+                    }
+                });
+            }
+            @Override
+            public void onFailure(String reason) {
+                mHandler.post(() -> {
+                    searching.dismiss();
+                    Log.w(TAG, "Samsung auto-open failed: " + reason);
+                    // No TV found — fall back to manual URL
+                    if (!isFinishing()) showUrlDialog(gameUrl);
+                });
+            }
+        });
+    }
+
+    /** Show the URL dialog so the user can copy/open the game URL manually. */
+    private void showUrlDialog(String url) {
+        if (isFinishing()) return;
         new AlertDialog.Builder(this)
             .setTitle("Jeu prêt sur la TV !")
-            .setMessage("Sur le navigateur de la TV, ouvre :\n\n"
+            .setMessage("Ouvre cette adresse dans le navigateur de ta TV :\n\n"
                 + url + "\n\n"
-                + "Le jeu démarrera directement dans le navigateur.\n"
-                + "Appuie sur \"Copier l'URL\" pour la partager facilement.")
+                + "(La TV Samsung devrait l'avoir ouvert automatiquement.)")
             .setPositiveButton("Copier l'URL", (d, w) -> {
                 ClipboardManager cm = (ClipboardManager)
                     getSystemService(CLIPBOARD_SERVICE);
@@ -417,9 +469,8 @@ public class LauncherActivity extends Activity {
                     Toast.makeText(this, "URL copiée !", Toast.LENGTH_SHORT).show();
                 }
             })
-            .setNeutralButton("Ouvrir sur ce téléphone", (d, w) -> {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-            })
+            .setNeutralButton("Ouvrir ici", (d, w) ->
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))))
             .setNegativeButton("Fermer", null)
             .show();
     }

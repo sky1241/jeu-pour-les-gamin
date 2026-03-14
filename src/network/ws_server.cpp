@@ -99,7 +99,20 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
     auto j = json::parse(msg);
     std::string type = j.value("type", "");
 
-    if (type == MSG_JOIN)
+    if (type == MSG_TV_CLIENT)
+    {
+      // TV browser (wasm) registers as a passive listener.
+      // It receives relayed inputs + state updates but is NOT a player.
+      std::string state_str;
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_tv_clients.insert(&ws);
+        state_str = make_state_json(m_game_level, m_game_status);
+      }
+      ws.send(state_str); // send current state so TV knows who's connected
+      log_info << "[WS] TV client connected (" << m_tv_clients.size() << " total)" << std::endl;
+    }
+    else if (type == MSG_JOIN)
     {
       std::string pid = j.value("player_id", "");
       std::string pname = j.value("player_name", "Player");
@@ -228,15 +241,23 @@ WsServer::on_message(ix::WebSocket& ws, const std::string& msg)
     {
       std::string pid = j.value("player_id", "");
 
-      std::lock_guard<std::mutex> lock(m_mutex);
-      auto it = m_inputs.find(pid);
-      if (it != m_inputs.end())
+      std::vector<ix::WebSocket*> tv_snapshot;
       {
-        it->second.stick_x = j.value("stick_x", 0.0f);
-        it->second.stick_y = j.value("stick_y", 0.0f);
-        it->second.btn_a   = j.value("btn_a", false);
-        it->second.btn_b   = j.value("btn_b", false);
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_inputs.find(pid);
+        if (it != m_inputs.end())
+        {
+          it->second.stick_x = j.value("stick_x", 0.0f);
+          it->second.stick_y = j.value("stick_y", 0.0f);
+          it->second.btn_a   = j.value("btn_a", false);
+          it->second.btn_b   = j.value("btn_b", false);
+        }
+        // Collect TV clients while holding mutex
+        tv_snapshot.assign(m_tv_clients.begin(), m_tv_clients.end());
       }
+      // Relay raw input JSON to all TV wasm clients (outside lock)
+      for (auto* tv : tv_snapshot)
+        tv->send(msg);
     }
     else if (type == MSG_LEAVE)
     {
@@ -291,6 +312,9 @@ void
 WsServer::on_close(ix::WebSocket& ws)
 {
   std::lock_guard<std::mutex> lock(m_mutex);
+
+  // Remove from TV clients set if it was a TV browser
+  m_tv_clients.erase(&ws);
 
   auto it = m_ws_to_player.find(&ws);
   if (it != m_ws_to_player.end())
@@ -404,7 +428,7 @@ WsServer::broadcast(const std::string& json_str)
   if (!m_server)
     return;
 
-  // Use IXWebSocketServer's getClients() to broadcast
+  // Send to all connected clients (players + TV browsers)
   auto clients = m_server->getClients();
   for (auto& client : clients)
   {

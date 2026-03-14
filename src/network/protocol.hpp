@@ -94,7 +94,8 @@ constexpr const char* MSG_LEAVE    = "leave";
 constexpr const char* MSG_START    = "start";
 constexpr const char* MSG_STATE    = "state";
 constexpr const char* MSG_VICTORY  = "victory";
-constexpr const char* MSG_DISCOVER = "discover";
+constexpr const char* MSG_DISCOVER  = "discover";
+constexpr const char* MSG_TV_CLIENT = "tv_client"; // TV browser registers as passive listener
 
 // Game status strings
 constexpr const char* STATUS_LOBBY   = "lobby";
