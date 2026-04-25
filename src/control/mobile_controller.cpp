@@ -80,7 +80,7 @@ MobileController::MobileController() :
   m_haptic_timer(0)
 {
 #ifdef __ANDROID__
-  SDL_InitSubSystem(SDL_INIT_HAPTIC | SDL_INIT_TIMER | SDL_INIT_SENSOR);
+  SDL_InitSubSystem(SDL_INIT_HAPTIC | SDL_INIT_TIMER);
 
   // Init haptic feedback
   m_haptic.reset(SDL_HapticOpen(0));
@@ -96,29 +96,9 @@ MobileController::MobileController() :
     }
   }
 
-  // Init accelerometer
-  int num_sensors = SDL_NumSensors();
-  for (int i = 0; i < num_sensors; ++i)
-  {
-    if (SDL_SensorGetDeviceType(i) == SDL_SENSOR_ACCEL)
-    {
-      m_accelerometer = SDL_SensorOpen(i);
-      if (m_accelerometer)
-      {
-        log_info << "Accelerometer opened for tilt controls" << std::endl;
-      }
-      else
-      {
-        log_warning << "Failed to open accelerometer: " << SDL_GetError() << std::endl;
-      }
-      break;
-    }
-  }
-
-  if (!m_accelerometer)
-  {
-    log_warning << "No accelerometer found — tilt controls disabled, falling back to touch D-pad" << std::endl;
-  }
+  // Accelerometer disabled — D-pad buttons only
+  m_accelerometer = nullptr;
+  log_info << "Tilt controls disabled — using D-pad buttons only" << std::endl;
 #endif
 }
 
@@ -134,7 +114,7 @@ MobileController::~MobileController()
 bool
 MobileController::use_tilt() const
 {
-  return g_config->tilt_enabled && m_accelerometer != nullptr;
+  return false; // Tilt disabled — D-pad buttons only
 }
 
 void

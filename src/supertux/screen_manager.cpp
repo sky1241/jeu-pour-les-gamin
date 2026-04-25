@@ -579,8 +579,12 @@ ScreenManager::process_events()
 
         SDL_Event event2;
 
-        if (m_mobile_controller.process_finger_down_event(event.tfinger))
-          break; // Event was processed by touch controls, do not generate mouse event
+        // When a menu is active (title screen, main menu, etc.),
+        // let ALL touches through as mouse events so the kid can tap menu items.
+        // Only consume touch for game controls when actually playing.
+        if (!m_menu_manager->is_active() && !m_menu_manager->has_dialog() &&
+            m_mobile_controller.process_finger_down_event(event.tfinger))
+          break;
 
         event2.type = SDL_MOUSEBUTTONDOWN;
         event2.button.button = SDL_BUTTON_LEFT;
@@ -608,8 +612,9 @@ ScreenManager::process_events()
         event2.button.y = Sint32(old_event.tfinger.y * window_height);
         SDL_PushEvent(&event2);
 
-        if (m_mobile_controller.process_finger_up_event(event.tfinger))
-          break; // Event was processed by touch controls, do not generate mouse event
+        if (!m_menu_manager->is_active() && !m_menu_manager->has_dialog() &&
+            m_mobile_controller.process_finger_up_event(event.tfinger))
+          break;
 
         event.type = SDL_MOUSEMOTION;
         event.motion.x = event2.button.x;
@@ -622,8 +627,9 @@ ScreenManager::process_events()
       {
         SDL_Event old_event = event;
 
-        if (m_mobile_controller.process_finger_motion_event(event.tfinger))
-          break; // Event was processed by touch controls, do not generate mouse event
+        if (!m_menu_manager->is_active() && !m_menu_manager->has_dialog() &&
+            m_mobile_controller.process_finger_motion_event(event.tfinger))
+          break;
 
         event.type = SDL_MOUSEMOTION;
         event.motion.x = Sint32(old_event.tfinger.x * window_width);
